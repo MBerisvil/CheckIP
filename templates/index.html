@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VerIP</title>
+    <link rel="icon" type="image/png" sizes="60x60" href="{{ url_for('static', filename='ip.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+    <!-- Barra superior que aparece con scroll -->
+    <div class="top-bar hidden" id="topBar">
+        <div class="container">
+            <img src="{{ url_for('static', filename='ip.png') }}" alt="IP Checker" class="top-bar-logo">
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="shield-icon">
+                <img src="{{ url_for('static', filename='ip.png') }}" alt="Network Analysis" class="custom-shield">
+            </div>
+            <h1 style="font-family: 'Sora', 'IBM Plex Sans', sans-serif; font-weight: 500;"><span style="color: #6b7280;">Ver</span><strong>IP</strong></h1>
+            <p class="subtitle">Verifica si una dirección IP está en listas negras y obtén información de geolocalización</p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <h2>Ingresa una dirección IP</h2>
+            <p class="input-description">Introduce la IP que deseas verificar</p>
+            <div class="input-container">
+                <input type="text" id="ipInput" placeholder="179.7.73.55" value="">
+                <button id="verifyBtn">
+                    <i data-lucide="search"></i>
+                    Verificar
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Verificando IP...</p>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results" class="results hidden">
+            <!-- General Summary -->
+            <div class="summary-section">
+                <h2>Resumen General</h2>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <span class="label">IP Verificada</span>
+                        <span id="verifiedIP" class="value">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Reportes Históricos</span>
+                        <span id="summaryTotalReports" class="value red">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Confianza Actual</span>
+                        <span id="summaryAbuseConfidence" class="value">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Estado de Seguridad</span>
+                        <span id="summarySecurityStatus" class="value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trust Assessment -->
+            <div class="trust-section">
+                <h2>
+                    <i data-lucide="shield-check"></i>
+                    Evaluación de Reputación
+                </h2>
+                <p class="trust-subtitle">Análisis basado en datos de inteligencia de amenazas</p>
+                <div class="trust-container">
+                    <div class="trust-circle">
+                        <div id="trustPercentage" class="trust-percentage">0%</div>
+                    </div>
+                    <div class="trust-info">
+                        <h3 id="trustStatus">Nivel de Reputación: -</h3>
+                        <p id="trustDescription">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Geolocation -->
+            <div class="geo-section">
+                <h2>
+                    <i data-lucide="globe"></i>
+                    Información de Geolocalización
+                </h2>
+                <div class="geo-container-new">
+                    <div id="map" class="map-full"></div>
+                    <div class="geo-cards">
+                        <div class="geo-card">
+                            <div class="geo-card-icon">
+                                <i data-lucide="map-pin"></i>
+                            </div>
+                            <div class="geo-card-content">
+                                <div class="geo-card-label">UBICACIÓN</div>
+                                <div id="geoLocation" class="geo-card-value">-</div>
+                                <div id="geoLocationSub" class="geo-card-sub">-</div>
+                            </div>
+                        </div>
+                        <div class="geo-card">
+                            <div class="geo-card-icon">
+                                <i data-lucide="wifi"></i>
+                            </div>
+                            <div class="geo-card-content">
+                                <div class="geo-card-label">PROVEEDOR</div>
+                                <div id="geoProvider" class="geo-card-value">-</div>
+                                <div id="geoProviderSub" class="geo-card-sub">-</div>
+                            </div>
+                        </div>
+                        <div class="geo-card">
+                            <div class="geo-card-icon">
+                                <i data-lucide="crosshair"></i>
+                            </div>
+                            <div class="geo-card-content">
+                                <div class="geo-card-label">COORDENADAS</div>
+                                <div id="geoCoordsNew" class="geo-card-value">-</div>
+                                <div id="geoCoordsSub" class="geo-card-sub">-</div>
+                            </div>
+                        </div>
+                        <div class="geo-card">
+                            <div class="geo-card-icon">
+                                <i data-lucide="clock"></i>
+                            </div>
+                            <div class="geo-card-content">
+                                <div class="geo-card-label">ZONA HORARIA</div>
+                                <div id="geoTimezoneNew" class="geo-card-value">-</div>
+                                <div id="geoTimezoneSub" class="geo-card-sub">UTC offset</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Threat Analysis -->
+            <div class="threat-analysis-section">
+                <h2>
+                    <i data-lucide="shield-alert"></i>
+                    Blacklists DNS Consultadas
+                </h2>
+                <p class="threat-analysis-description">Estado de la IP en las principales blacklists DNS del mundo</p>
+
+                <!-- Blacklist Summary Cards -->
+                <div class="blacklist-summary-grid">
+                    <div class="blacklist-summary-card">
+                        <div class="summary-icon">
+                            <i data-lucide="shield-check"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-title">Total Verificado</div>
+                            <div id="totalChecked" class="summary-value">-</div>
+                            <div class="summary-subtitle">Blacklists consultadas</div>
+                        </div>
+                    </div>
+                    
+                    <div class="blacklist-summary-card danger">
+                        <div class="summary-icon">
+                            <i data-lucide="alert-circle"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-title">IP Listada en</div>
+                            <div id="totalListed" class="summary-value">-</div>
+                            <div class="summary-subtitle">Blacklists encontradas</div>
+                        </div>
+                    </div>
+                    
+                    <div class="blacklist-summary-card">
+                        <div class="summary-icon">
+                            <i data-lucide="percent"></i>
+                        </div>
+                        <div class="summary-content">
+                            <div class="summary-title">Porcentaje</div>
+                            <div id="blacklistPercentage" class="summary-value">-</div>
+                            <div class="summary-subtitle">De detección</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blacklist Details (Collapsible) -->
+                <div class="blacklist-details">
+                    <button id="toggleDetails" class="toggle-details-btn">
+                        <i data-lucide="chevron-down"></i>
+                        <span>Ver detalles por blacklist</span>
+                    </button>
+                    <div id="blacklistDetailsList" class="blacklist-details-content hidden">
+                        <!-- Se llenará dinámicamente desde script.js -->
+                    </div>
+                </div>
+            </div>
+
+
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>
+                Herramienta de análisis de seguridad | Desarrollador Berisvil, Mauricio
+            </p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

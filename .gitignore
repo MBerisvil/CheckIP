@@ -1,0 +1,19 @@
+.vercel
+
+# Variables de entorno (NUNCA subir a GitHub)
+.env
+.env.local
+.env.production
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos temporales
+*.tmp
+*.log
+
+#Archivos backup
+script_backup.js
+verificar_ip.py
