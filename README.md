@@ -1,5 +1,4 @@
 
-![](../Imágenes/ip.png)
 
 **Ver-IP** es una aplicación web que muestra información técnica sobre la conexión del usuario, incluyendo dirección IP, ubicación aproximada, proveedor de servicios de Internet y detalles del navegador.
 
