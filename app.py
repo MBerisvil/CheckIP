@@ -133,9 +133,13 @@ def check_multiple_blacklists(ip):
     blacklists = {
         # Spamhaus (las más importantes)
         'zen.spamhaus.org': 'Spamhaus ZEN',
-        'sbl.spamhaus.org': 'Spamhaus SBL', 
+        'sbl.spamhaus.org': 'Spamhaus SBL',
+        'cbl.spamhaus.org': 'Spamhaus CBL', 
         'css.spamhaus.org': 'Spamhaus CSS',
         'pbl.spamhaus.org': 'Spamhaus PBL',
+
+        # SpamCop
+        'bl.spamcop.net': 'SpamCop',
         
         # SURBL/URIBL (URLs y dominios)
         'multi.surbl.org': 'SURBL Multi',
@@ -157,9 +161,6 @@ def check_multiple_blacklists(ip):
         
         # Invaluement
         'ips.backscatterer.org': 'Backscatterer',
-        
-        # SpamCop
-        'bl.spamcop.net': 'SpamCop',
         
         # Otras importantes
         'dnsbl.njabl.org': 'NJABL',
