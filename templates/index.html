@@ -1,21 +1,26 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VerIP</title>
-    <link rel="icon" type="image/png" sizes="60x60" href="{{ url_for('static', filename='ip.png') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/verificaripicon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
+
 <body>
     <!-- Barra superior que aparece con scroll -->
     <div class="top-bar hidden" id="topBar">
         <div class="container">
-            <img src="{{ url_for('static', filename='ip.png') }}" alt="IP Checker" class="top-bar-logo">
+            <a href="{{ url_for('index') }}">
+                <img src="{{ url_for('static', filename='img/verificaripicon.png') }}" alt="IP Checker"
+                    class="top-bar-logo">
+            </a>
         </div>
     </div>
 
@@ -23,10 +28,13 @@
         <!-- Header -->
         <header class="header">
             <div class="shield-icon">
-                <img src="{{ url_for('static', filename='ip.png') }}" alt="Network Analysis" class="custom-shield">
+                <img src="{{ url_for('static', filename='img/verificarip.png') }}" alt="Network Analysis"
+                    class="custom-shield">
             </div>
-            <h1 style="font-family: 'Sora', 'IBM Plex Sans', sans-serif; font-weight: 500;"><span style="color: #6b7280;">Ver</span><strong>IP</strong></h1>
-            <p class="subtitle">Verifica si una dirección IP está en listas negras y obtén información de geolocalización</p>
+            <!--<h1 style="font-family: 'Sora', 'IBM Plex Sans', sans-serif; font-weight: 500;"><span
+                    style="color: #6b7280;">Ver</span><strong>IP</strong></h1>-->
+            <p class="subtitle">Verifica si una dirección IP está en listas negras y obtén información de
+                geolocalización</p>
         </header>
 
         <!-- Input Section -->
@@ -164,7 +172,7 @@
                             <div class="summary-subtitle">Blacklists consultadas</div>
                         </div>
                     </div>
-                    
+
                     <div class="blacklist-summary-card danger">
                         <div class="summary-icon">
                             <i data-lucide="alert-circle"></i>
@@ -175,7 +183,7 @@
                             <div class="summary-subtitle">Blacklists encontradas</div>
                         </div>
                     </div>
-                    
+
                     <div class="blacklist-summary-card">
                         <div class="summary-icon">
                             <i data-lucide="percent"></i>
@@ -208,11 +216,12 @@
     <footer class="footer">
         <div class="container">
             <p>
-                Herramienta de análisis de seguridad | Desarrollador Berisvil, Mauricio
+                Herramienta de análisis de seguridad | Desarrollador Berisvil, Mauricio | v2.5
             </p>
         </div>
     </footer>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
+
 </html>
