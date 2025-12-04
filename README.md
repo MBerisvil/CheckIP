@@ -19,10 +19,17 @@
 
 ## 🛠️ Cómo contribuir
 
-1. Haz un fork del repositorio.
-2. Crea una rama con tu mejora: `git checkout -b mejora-nueva`.
-3. Realiza tus cambios y haz commit: `git commit -m 'Agrega nueva funcionalidad'`.
-4. Haz push a la rama: `git push origin mejora-nueva`.
-5. Abre un Pull Request.
+Por favor lee nuestra [Guía de Contribución](CONTRIBUTING.md) para conocer el flujo de trabajo completo.
+
+**Flujo rápido:**
+
+1. Fork del repositorio
+2. Clona tu fork: `git clone https://github.com/TU-USUARIO/CheckIP.git`
+3. Crea una rama desde `develop`: `git checkout -b feature/nueva-funcionalidad`
+4. Realiza tus cambios y commits: `git commit -m 'feat: descripción'`
+5. Push a tu fork: `git push origin feature/nueva-funcionalidad`
+6. Abre un Pull Request hacia `develop`
+
+**⚠️ Importante:** Nunca trabajes directamente en `main`. Todas las contribuciones deben ir a través de Pull Requests.
 
 ---
