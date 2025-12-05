@@ -81,13 +81,21 @@ class SystemStatus(db.Model):
     response_time = db.Column(db.Float)
     error_count = db.Column(db.Integer, default=0)
 
-# Crear tablas
-with app.app_context():
-    db.create_all()
+def init_db():
+    """Inicializar base de datos y crear tablas si no existen"""
+    try:
+        db.create_all()
+        return True
+    except Exception as e:
+        print(f"Error inicializando BD: {e}")
+        return False
 
 def init_admin_if_needed():
     """Inicializar usuario admin si no existe ninguno"""
     try:
+        # Asegurar que las tablas existan
+        init_db()
+        
         admin_exists = User.query.filter_by(is_admin=True).first()
         
         if not admin_exists:
