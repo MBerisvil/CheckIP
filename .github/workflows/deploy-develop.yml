@@ -30,19 +30,14 @@ jobs:
         run: python -m py_compile app.py
 
       - name: 🚀 Desplegar a Vercel (Development)
-        uses: amondnet/vercel-action@v25
+        run: |
+          npm install --global vercel
+          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          # Variables de entorno para DESARROLLO
-          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          API_MONITOR_KEY: ${{ secrets.API_MONITOR_KEY_DEV }}
-          ABUSEIPDB_API_KEY: ${{ secrets.ABUSEIPDB_API_KEY }}
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: ✅ Despliegue completado
         run: |
