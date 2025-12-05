@@ -71,13 +71,29 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Desplegar a Vercel (Production)
+      - name: 🚧 Activar modo mantenimiento
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod --local-config=vercel.maintenance.json'
+        continue-on-error: true
+
+      - name: ⏳ Esperar propagación de mantenimiento
+        run: sleep 10
+
+      - name: 🚀 Desplegar nueva versión a Vercel
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+
+      - name: ✅ Verificar despliegue exitoso
+        if: success()
+        run: echo "🎉 Despliegue completado y sitio restaurado"
 
   # Job de despliegue programado a producción
   deploy-scheduled:
@@ -93,13 +109,25 @@ jobs:
         with:
           ref: main
 
-      - name: Notificar inicio de despliegue programado
+      - name: 📅 Notificar inicio de despliegue programado
         run: |
           echo "🕐 Iniciando despliegue programado a producción"
           echo "📅 Fecha: $(date)"
           echo "🌿 Rama: main"
 
-      - name: Desplegar a Vercel (Production)
+      - name: 🚧 Activar modo mantenimiento
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod --local-config=vercel.maintenance.json'
+        continue-on-error: true
+
+      - name: ⏳ Esperar propagación de mantenimiento
+        run: sleep 10
+
+      - name: 🚀 Desplegar nueva versión a Vercel
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -107,11 +135,12 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
 
-      - name: Notificar despliegue exitoso
+      - name: ✅ Notificar despliegue exitoso
         if: success()
         run: |
           echo "✅ Despliegue programado completado exitosamente"
           echo "🚀 Sitio actualizado: https://verificar-ip.vercel.app"
+          echo "⏱️ Tiempo total: ${{ job.duration }} segundos"
 
   # Job de despliegue a staging (opcional)
   deploy-staging:
