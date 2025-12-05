@@ -57,7 +57,7 @@ jobs:
 
       - name: Validar sintaxis Python
         run: |
-          python -m py_compile app.py verificar_ip.py
+          python -m py_compile app.py
 
   # Job de despliegue manual a producción
   deploy-production:
