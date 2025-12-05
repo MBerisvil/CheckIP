@@ -1,4 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 import http.client
 import json
 import socket
@@ -7,16 +11,83 @@ import os
 from dotenv import load_dotenv
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from functools import wraps
 
 # Cargar variables de entorno desde .env (solo en desarrollo)
 load_dotenv()
 
-# VerIP v3.0 - Migración a AbuseIPDB API profesional con seguridad
+# VerIP v3.5 - Panel de Administrador + API de Monitoreo + Gráficos AbuseIPDB
 
 app = Flask(__name__)
 
-# Configuración segura de API usando variables de entorno
+# Configuración segura
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///verip_stats.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configuración de API
 ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH', generate_password_hash('admin123'))  # Cambiar en producción
+API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
+
+# Inicializar extensiones
+db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'admin_login'
+
+# Modelos de base de datos
+class User(UserMixin):
+    def __init__(self, id):
+        self.id = id
+    
+    @staticmethod
+    def get(user_id):
+        if user_id == 'admin':
+            return User('admin')
+        return None
+
+class QueryLog(db.Model):
+    __tablename__ = 'query_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(45), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    abuse_confidence = db.Column(db.Integer, default=0)
+    total_reports = db.Column(db.Integer, default=0)
+    is_whitelisted = db.Column(db.Boolean, default=False)
+    country_code = db.Column(db.String(2))
+    usage_type = db.Column(db.String(50))
+    trust_score = db.Column(db.Integer)
+    execution_time = db.Column(db.Float)
+    api_used = db.Column(db.Boolean, default=False)
+
+class SystemStatus(db.Model):
+    __tablename__ = 'system_status'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='online')
+    response_time = db.Column(db.Float)
+    error_count = db.Column(db.Integer, default=0)
+
+# Crear tablas
+with app.app_context():
+    db.create_all()
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.get(user_id)
+
+# Decorador para API key
+def require_api_key(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key')
+        if not api_key or api_key != API_MONITOR_KEY:
+            return jsonify({'error': 'API key inválida o ausente'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 def check_ip_reputation_abuseipdb(ip):
     """Verificar reputación de IP usando AbuseIPDB API - reemplaza 74+ blacklists DNS"""
@@ -310,6 +381,25 @@ def verify_ip(ip):
     
     execution_time = time.time() - start_time
     
+    # Registrar consulta en base de datos
+    try:
+        log_entry = QueryLog(
+            ip_address=ip,
+            abuse_confidence=reputation['abuse_confidence'],
+            total_reports=reputation['total_reports'],
+            is_whitelisted=reputation['is_whitelisted'],
+            country_code=reputation.get('country_code'),
+            usage_type=reputation.get('usage_type'),
+            trust_score=trust_score,
+            execution_time=execution_time,
+            api_used=reputation.get('api_used', False)
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+    except Exception as e:
+        print(f"Error registrando consulta: {e}")
+        db.session.rollback()
+    
     # Simular estructura de categorías para compatibilidad con frontend
     # Mejorado para mostrar datos más realistas y variados
     
@@ -428,6 +518,212 @@ def verify():
     
     result = verify_ip(ip)
     return jsonify(result)
+
+# ============================================
+# RUTAS DE ADMINISTRADOR
+# ============================================
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
+            user = User('admin')
+            login_user(user)
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Usuario o contraseña incorrectos', 'error')
+    
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+@login_required
+def admin_logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+@app.route('/admin/dashboard')
+@login_required
+def admin_dashboard():
+    # Estadísticas generales
+    total_queries = QueryLog.query.count()
+    today_queries = QueryLog.query.filter(
+        QueryLog.timestamp >= datetime.utcnow().date()
+    ).count()
+    
+    # Últimas 24 horas
+    last_24h = datetime.utcnow() - timedelta(hours=24)
+    queries_24h = QueryLog.query.filter(QueryLog.timestamp >= last_24h).count()
+    
+    # IPs más consultadas
+    from sqlalchemy import func
+    top_ips = db.session.query(
+        QueryLog.ip_address,
+        func.count(QueryLog.ip_address).label('count')
+    ).group_by(QueryLog.ip_address).order_by(func.count(QueryLog.ip_address).desc()).limit(10).all()
+    
+    # Consultas por día (últimos 7 días)
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    daily_queries = db.session.query(
+        func.date(QueryLog.timestamp).label('date'),
+        func.count(QueryLog.id).label('count')
+    ).filter(QueryLog.timestamp >= seven_days_ago).group_by(func.date(QueryLog.timestamp)).all()
+    
+    # Estadísticas de confianza
+    avg_trust_score = db.session.query(func.avg(QueryLog.trust_score)).scalar() or 0
+    high_risk_count = QueryLog.query.filter(QueryLog.abuse_confidence > 50).count()
+    whitelisted_count = QueryLog.query.filter(QueryLog.is_whitelisted == True).count()
+    
+    # Consultas por país
+    country_stats = db.session.query(
+        QueryLog.country_code,
+        func.count(QueryLog.country_code).label('count')
+    ).filter(QueryLog.country_code.isnot(None)).group_by(QueryLog.country_code).order_by(func.count(QueryLog.country_code).desc()).limit(10).all()
+    
+    # API usage
+    api_queries = QueryLog.query.filter(QueryLog.api_used == True).count()
+    simulated_queries = QueryLog.query.filter(QueryLog.api_used == False).count()
+    
+    # Convertir Row objects a listas/tuplas para JSON serialization
+    top_ips_list = [(ip, count) for ip, count in top_ips]
+    daily_queries_list = [(str(date), count) for date, count in daily_queries]
+    country_stats_list = [(country, count) for country, count in country_stats]
+    
+    stats = {
+        'total_queries': total_queries,
+        'today_queries': today_queries,
+        'queries_24h': queries_24h,
+        'top_ips': top_ips_list,
+        'daily_queries': daily_queries_list,
+        'avg_trust_score': round(avg_trust_score, 2),
+        'high_risk_count': high_risk_count,
+        'whitelisted_count': whitelisted_count,
+        'country_stats': country_stats_list,
+        'api_queries': api_queries,
+        'simulated_queries': simulated_queries
+    }
+    
+    return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
+
+# ============================================
+# API DE MONITOREO
+# ============================================
+
+@app.route('/api/status')
+@require_api_key
+def api_status():
+    """Endpoint para verificar el estado del servicio"""
+    try:
+        # Verificar conexión a base de datos
+        db.session.execute('SELECT 1')
+        
+        # Obtener últimas estadísticas
+        last_query = QueryLog.query.order_by(QueryLog.timestamp.desc()).first()
+        total_queries = QueryLog.query.count()
+        
+        # Calcular tiempo de respuesta promedio
+        avg_response_time = db.session.query(func.avg(QueryLog.execution_time)).scalar() or 0
+        
+        return jsonify({
+            'status': 'online',
+            'timestamp': datetime.utcnow().isoformat(),
+            'database': 'connected',
+            'total_queries': total_queries,
+            'last_query': last_query.timestamp.isoformat() if last_query else None,
+            'avg_response_time': round(avg_response_time, 3),
+            'version': '3.5'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'timestamp': datetime.utcnow().isoformat(),
+            'error': str(e)
+        }), 500
+
+@app.route('/api/stats')
+@require_api_key
+def api_stats():
+    """Endpoint para obtener estadísticas detalladas"""
+    period = request.args.get('period', '7d')  # 24h, 7d, 30d
+    
+    # Calcular período
+    if period == '24h':
+        since = datetime.utcnow() - timedelta(hours=24)
+    elif period == '30d':
+        since = datetime.utcnow() - timedelta(days=30)
+    else:  # 7d por defecto
+        since = datetime.utcnow() - timedelta(days=7)
+    
+    # Consultas en el período
+    queries = QueryLog.query.filter(QueryLog.timestamp >= since).all()
+    
+    # Estadísticas
+    total = len(queries)
+    high_risk = len([q for q in queries if q.abuse_confidence > 50])
+    medium_risk = len([q for q in queries if 25 < q.abuse_confidence <= 50])
+    low_risk = len([q for q in queries if q.abuse_confidence <= 25])
+    whitelisted = len([q for q in queries if q.is_whitelisted])
+    
+    # Agrupar por día
+    daily_stats = {}
+    for query in queries:
+        date_key = query.timestamp.strftime('%Y-%m-%d')
+        if date_key not in daily_stats:
+            daily_stats[date_key] = {
+                'total': 0,
+                'high_risk': 0,
+                'api_used': 0
+            }
+        daily_stats[date_key]['total'] += 1
+        if query.abuse_confidence > 50:
+            daily_stats[date_key]['high_risk'] += 1
+        if query.api_used:
+            daily_stats[date_key]['api_used'] += 1
+    
+    # Top países
+    country_counts = {}
+    for query in queries:
+        if query.country_code:
+            country_counts[query.country_code] = country_counts.get(query.country_code, 0) + 1
+    
+    return jsonify({
+        'period': period,
+        'since': since.isoformat(),
+        'summary': {
+            'total_queries': total,
+            'high_risk': high_risk,
+            'medium_risk': medium_risk,
+            'low_risk': low_risk,
+            'whitelisted': whitelisted
+        },
+        'daily_stats': daily_stats,
+        'top_countries': dict(sorted(country_counts.items(), key=lambda x: x[1], reverse=True)[:10])
+    })
+
+@app.route('/api/recent')
+@require_api_key
+def api_recent():
+    """Endpoint para obtener consultas recientes"""
+    limit = int(request.args.get('limit', 50))
+    
+    queries = QueryLog.query.order_by(QueryLog.timestamp.desc()).limit(limit).all()
+    
+    return jsonify({
+        'count': len(queries),
+        'queries': [{
+            'ip': q.ip_address,
+            'timestamp': q.timestamp.isoformat(),
+            'abuse_confidence': q.abuse_confidence,
+            'trust_score': q.trust_score,
+            'country': q.country_code,
+            'is_whitelisted': q.is_whitelisted
+        } for q in queries]
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
