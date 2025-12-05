@@ -48,7 +48,7 @@ Copia `.env.example` a `.env` y configura:
 ```bash
 ABUSEIPDB_API_KEY=tu-api-key-aqui
 ADMIN_USERNAME=tu-usuario
-ADMIN_PASSWORD_HASH=hash-generado
+ADMIN_PASSWORD=tu-contraseña-segura
 API_MONITOR_KEY=tu-clave-api-monitoreo
 ```
 

@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Script para generar hash de contraseña para el panel de administrador
-Uso: python generate_password_hash.py
+⚠️ OBSOLETO: Este script ya no es necesario
+
+El sistema ahora usa una tabla de usuarios en la base de datos.
+Para crear o actualizar usuarios admin, usa:
+- init_admin_user.py (para desarrollo local)
+- sync_admin_to_neon.py (para sincronizar con Neon DEV/PROD)
+
+Las contraseñas se hashean automáticamente al crear el usuario.
 """
 
 from werkzeug.security import generate_password_hash

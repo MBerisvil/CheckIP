@@ -11,8 +11,8 @@ Esta guía te ayudará a configurar correctamente los secrets de GitHub para los
 | `VERCEL_ORG_ID` | ID de tu organización en Vercel | `team_xxx...` |
 | `VERCEL_PROJECT_ID` | ID del proyecto en Vercel | `prj_xxx...` |
 | `SECRET_KEY` | Clave secreta de Flask (genera una fuerte) | `tu-clave-super-secreta-123` |
-| `ADMIN_USERNAME` | Usuario administrador | `Administrador` |
-| `ADMIN_PASSWORD_HASH` | Hash de contraseña (usa `generate_password_hash.py`) | `pbkdf2:sha256:...` |
+| `ADMIN_USERNAME` | Usuario administrador | `Admin` |
+| `ADMIN_PASSWORD` | Contraseña admin (se hashea automáticamente) | `Admin94*!` |
 | `ABUSEIPDB_API_KEY` | API Key de AbuseIPDB | `076e1a0fe4d3a833...` |
 
 ### 🟢 Secrets para DEVELOPMENT
