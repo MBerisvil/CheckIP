@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-      url: https://verip-dev.vercel.app
+      url: https://ver-ip-mberisvil-mauricios-projects-7d741bf6.vercel.app/
     
     steps:
       - name: 📥 Checkout código
@@ -47,5 +47,5 @@ jobs:
       - name: ✅ Despliegue completado
         run: |
           echo "🎉 Despliegue a DESARROLLO completado"
-          echo "🌐 URL: https://verip-dev.vercel.app"
+          echo "🌐 URL: https://ver-ip-mberisvil-mauricios-projects-7d741bf6.vercel.app"
           echo "📊 Base de datos: Neon Development"

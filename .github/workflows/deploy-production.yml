@@ -38,7 +38,7 @@ jobs:
     needs: test
     environment:
       name: production
-      url: https://verificar-ip.vercel.app
+      url: https://ver-ip.vercel.app
     
     steps:
       - name: 📥 Checkout código
@@ -76,6 +76,6 @@ jobs:
         if: success()
         run: |
           echo "🎉 Despliegue a PRODUCCIÓN completado"
-          echo "🌐 URL: https://verificar-ip.vercel.app"
+          echo "🌐 URL: https://ver-ip.vercel.app"
           echo "📊 Base de datos: Neon Production"
           echo "⏱️ Fecha: $(date)"
