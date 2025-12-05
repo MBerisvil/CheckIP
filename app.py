@@ -57,7 +57,17 @@ class User(UserMixin, db.Model):
     @staticmethod
     def get(user_id):
         """Obtener usuario por ID"""
-        return User.query.get(int(user_id))
+        try:
+            # Intentar convertir a int si es posible
+            if isinstance(user_id, str) and user_id.isdigit():
+                user_id = int(user_id)
+            elif isinstance(user_id, str):
+                # Si es un string no numérico (como 'admin'), retornar None
+                # Las sesiones viejas serán invalidadas
+                return None
+            return User.query.get(int(user_id))
+        except (ValueError, TypeError):
+            return None
 
 class QueryLog(db.Model):
     __tablename__ = 'query_logs'
