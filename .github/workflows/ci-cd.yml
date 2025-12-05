@@ -6,10 +6,18 @@ on:
   
   # Despliegue programado (configurable)
   schedule:
-    # ⚠️ PRUEBA: Se ejecutará a las 12:22 UTC (9:22 AM Argentina)
-    - cron: '22 12 * * *'  # Todos los días a las 12:22 UTC
-    # Después de probar, cambiar a tu horario deseado:
-    # - cron: '0 3 * * 6'  # Sábado 3:00 AM UTC = Sábado 12:00 AM Argentina
+    - cron: '0 3 * * 6'  # Sábado 3:00 AM UTC = Sábado 12:00 AM Argentina
+    # Para cambiar el horario, edita esta línea
+    # Formato: "minuto hora día_mes mes día_semana"
+    # Ejemplos:
+    # - cron: '0 2 * * 1'   # Lunes 2:00 AM UTC (11:00 PM Domingo Argentina)
+    # - cron: '0 0 * * 6'   # Viernes 9:00 PM Argentina
+    # Herramienta: https://crontab.guru/
+    # Para cambiar: https://crontab.guru/
+    # Ejemplos:
+    # - cron: '0 2 * * 1'   # Lunes 2:00 AM UTC (11:00 PM Domingo Argentina)
+    # - cron: '0 14 * * 5'  # Viernes 2:00 PM UTC (11:00 AM Argentina)
+    # - cron: '30 20 * * *' # Todos los días 8:30 PM UTC (5:30 PM Argentina)
   
   workflow_dispatch:
     inputs:
