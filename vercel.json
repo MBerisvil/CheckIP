@@ -2,22 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "app.py",
+      "src": "vercel_app.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "vercel_app.py"
     }
-  ],
-  "env": {
-    "DATABASE_URL": "@database_url",
-    "SECRET_KEY": "@secret_key",
-    "ADMIN_USERNAME": "@admin_username",
-    "ADMIN_PASSWORD": "@admin_password",
-    "API_MONITOR_KEY": "@api_monitor_key",
-    "ABUSEIPDB_API_KEY": "@abuseipdb_api_key"
-  }
+  ]
 }
