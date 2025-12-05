@@ -42,15 +42,24 @@ login_manager.init_app(app)
 login_manager.login_view = 'admin_login'
 
 # Modelos de base de datos
-class User(UserMixin):
-    def __init__(self, id):
-        self.id = id
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(120))
+    is_admin = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)
+    
+    def check_password(self, password):
+        """Verificar contraseña"""
+        return check_password_hash(self.password_hash, password)
     
     @staticmethod
     def get(user_id):
-        if user_id == 'admin':
-            return User('admin')
-        return None
+        """Obtener usuario por ID"""
+        return User.query.get(int(user_id))
 
 class QueryLog(db.Model):
     __tablename__ = 'query_logs'
@@ -535,8 +544,14 @@ def admin_login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        if username == ADMIN_USERNAME and check_password_hash(ADMIN_PASSWORD_HASH, password):
-            user = User('admin')
+        # Buscar usuario en la base de datos
+        user = User.query.filter_by(username=username).first()
+        
+        if user and user.check_password(password):
+            # Actualizar último login
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            
             login_user(user)
             return redirect(url_for('admin_dashboard'))
         else:
