@@ -6,11 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-develop:
+  validate:
     runs-on: ubuntu-latest
-    environment:
-      name: development
-      url: https://ver-ip-mberisvil-mauricios-projects-7d741bf6.vercel.app/
     
     steps:
       - name: 📥 Checkout código
@@ -27,20 +24,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: ✅ Validar sintaxis
-        run: python -m py_compile app.py
+        run: python -m py_compile app.py vercel_app.py
 
-      - name: 🚀 Desplegar a Vercel (Development)
-        run: |
-          npm install --global vercel
-          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
-          vercel build --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: 🧪 Verificar imports
+        run: python -c "from app import app; print('✅ App carga correctamente')"
 
-      - name: ✅ Despliegue completado
+      - name: ✅ Validación completada
         run: |
-          echo "🎉 Despliegue a DESARROLLO completado"
+          echo "🎉 Validación completada exitosamente"
+          echo "🚀 Vercel desplegará automáticamente a desarrollo"
           echo "🌐 URL: https://ver-ip-mberisvil-mauricios-projects-7d741bf6.vercel.app"
-          echo "📊 Base de datos: Neon Development"

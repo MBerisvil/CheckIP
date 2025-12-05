@@ -4,8 +4,6 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * 6'  # Sábado 3:00 AM UTC
 
 jobs:
   test:
@@ -31,45 +29,19 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: ✅ Validar sintaxis
-        run: python -m py_compile app.py
+        run: python -m py_compile app.py vercel_app.py
+
+      - name: 🧪 Verificar imports
+        run: python -c "from app import app; print('✅ App carga correctamente')"
 
   deploy-production:
     runs-on: ubuntu-latest
     needs: test
-    environment:
-      name: production
-      url: https://ver-ip.vercel.app
     
     steps:
-      - name: 📥 Checkout código
-        uses: actions/checkout@v4
-
-      - name: 🚧 Activar modo mantenimiento
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod --local-config=vercel.maintenance.json'
-        continue-on-error: true
-
-      - name: ⏳ Esperar propagación
-        run: sleep 10
-
-      - name: 🚀 Desplegar a Vercel (Production)
+      - name: ✅ Tests completados
         run: |
-          npm install --global vercel
-          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: ✅ Despliegue completado
-        if: success()
-        run: |
-          echo "🎉 Despliegue a PRODUCCIÓN completado"
+          echo "🎉 Tests completados exitosamente"
+          echo "🚀 Vercel desplegará automáticamente a producción"
           echo "🌐 URL: https://ver-ip.vercel.app"
-          echo "📊 Base de datos: Neon Production"
           echo "⏱️ Fecha: $(date)"
