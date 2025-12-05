@@ -83,34 +83,34 @@ class SystemStatus(db.Model):
     response_time = db.Column(db.Float)
     error_count = db.Column(db.Integer, default=0)
 
-# Crear tablas e inicializar usuario admin si no existe
+# Crear tablas
 with app.app_context():
     db.create_all()
-    
-    # Verificar si existe al menos un usuario admin
-    admin_exists = User.query.filter_by(is_admin=True).first()
-    
-    if not admin_exists:
-        # Crear usuario admin por defecto si no existe ninguno
-        # En producción, esto tomará las credenciales de las variables de entorno de GitHub Secrets
-        default_username = os.getenv('ADMIN_USERNAME', 'admin')
-        default_password = os.getenv('ADMIN_PASSWORD', 'admin123')  # Cambiar en producción
+
+def init_admin_if_needed():
+    """Inicializar usuario admin si no existe ninguno"""
+    try:
+        admin_exists = User.query.filter_by(is_admin=True).first()
         
-        admin_user = User(
-            username=default_username,
-            password_hash=generate_password_hash(default_password),
-            email=None,
-            is_admin=True,
-            created_at=datetime.utcnow()
-        )
-        
-        try:
+        if not admin_exists:
+            default_username = os.getenv('ADMIN_USERNAME', 'admin')
+            default_password = os.getenv('ADMIN_PASSWORD', 'admin123')
+            
+            admin_user = User(
+                username=default_username,
+                password_hash=generate_password_hash(default_password),
+                email=None,
+                is_admin=True,
+                created_at=datetime.utcnow()
+            )
+            
             db.session.add(admin_user)
             db.session.commit()
-            print(f"✅ Usuario admin '{default_username}' creado automáticamente")
-        except Exception as e:
-            db.session.rollback()
-            print(f"⚠️ No se pudo crear usuario admin: {e}")
+            return True
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error inicializando admin: {e}")
+    return False
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -549,6 +549,9 @@ def index():
 def health_check():
     """Health check endpoint para diagnosticar el estado de la aplicación"""
     try:
+        # Inicializar admin si no existe
+        init_admin_if_needed()
+        
         # Verificar conexión a base de datos
         user_count = User.query.count()
         query_count = QueryLog.query.count()
@@ -587,6 +590,9 @@ def verify():
 def admin_login():
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
+    
+    # Inicializar admin si no existe ninguno
+    init_admin_if_needed()
     
     if request.method == 'POST':
         username = request.form.get('username')
