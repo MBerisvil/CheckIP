@@ -23,7 +23,10 @@ app = Flask(__name__)
 
 # Configuración segura
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///verip_stats.db'
+
+# Configuración de base de datos (SQLite local o PostgreSQL Neon)
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Configuración de API
