@@ -520,6 +520,29 @@ def verify_ip(ip):
 def index():
     return render_template('index.html')
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint para diagnosticar el estado de la aplicación"""
+    try:
+        # Verificar conexión a base de datos
+        user_count = User.query.count()
+        query_count = QueryLog.query.count()
+        
+        return jsonify({
+            'status': 'ok',
+            'database': 'connected',
+            'users': user_count,
+            'queries': query_count,
+            'environment': os.getenv('VERCEL_ENV', 'local')
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'database': 'disconnected',
+            'error': str(e),
+            'environment': os.getenv('VERCEL_ENV', 'local')
+        }), 500
+
 @app.route('/verify', methods=['POST'])
 def verify():
     data = request.get_json()
