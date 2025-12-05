@@ -1,0 +1,22 @@
+# Mantenedores del Proyecto
+
+# Definir propietarios de código por archivos o directorios
+# Los propietarios serán solicitados automáticamente para revisión de PRs
+
+# Propietario general del proyecto
+* @MBerisvil
+
+# Archivos de configuración críticos
+vercel.json @MBerisvil
+requirements.txt @MBerisvil
+.github/** @MBerisvil
+
+# Código Python principal
+*.py @MBerisvil
+
+# Frontend
+/static/** @MBerisvil
+/templates/** @MBerisvil
+
+# Documentación
+*.md @MBerisvil
