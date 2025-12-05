@@ -31,8 +31,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Configuración de API
 ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
-ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH', generate_password_hash('admin123'))  # Cambiar en producción
 API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
 
 # Inicializar extensiones
