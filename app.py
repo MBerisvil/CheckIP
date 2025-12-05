@@ -83,9 +83,34 @@ class SystemStatus(db.Model):
     response_time = db.Column(db.Float)
     error_count = db.Column(db.Integer, default=0)
 
-# Crear tablas
+# Crear tablas e inicializar usuario admin si no existe
 with app.app_context():
     db.create_all()
+    
+    # Verificar si existe al menos un usuario admin
+    admin_exists = User.query.filter_by(is_admin=True).first()
+    
+    if not admin_exists:
+        # Crear usuario admin por defecto si no existe ninguno
+        # En producción, esto tomará las credenciales de las variables de entorno de GitHub Secrets
+        default_username = os.getenv('ADMIN_USERNAME', 'admin')
+        default_password = os.getenv('ADMIN_PASSWORD', 'admin123')  # Cambiar en producción
+        
+        admin_user = User(
+            username=default_username,
+            password_hash=generate_password_hash(default_password),
+            email=None,
+            is_admin=True,
+            created_at=datetime.utcnow()
+        )
+        
+        try:
+            db.session.add(admin_user)
+            db.session.commit()
+            print(f"✅ Usuario admin '{default_username}' creado automáticamente")
+        except Exception as e:
+            db.session.rollback()
+            print(f"⚠️ No se pudo crear usuario admin: {e}")
 
 @login_manager.user_loader
 def load_user(user_id):

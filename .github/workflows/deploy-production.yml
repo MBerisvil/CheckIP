@@ -63,7 +63,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           API_MONITOR_KEY: ${{ secrets.API_MONITOR_KEY_PROD }}
           ABUSEIPDB_API_KEY: ${{ secrets.ABUSEIPDB_API_KEY }}
         with:
