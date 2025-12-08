@@ -1,0 +1,47 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest flake8
+
+      - name: 🔍 Linter
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: ✅ Validar sintaxis
+        run: python -m py_compile app.py vercel_app.py
+
+      - name: 🧪 Verificar imports
+        run: python -c "from app import app; print('✅ App carga correctamente')"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: ✅ Tests completados
+        run: |
+          echo "🎉 Tests completados exitosamente"
+          echo "🚀 Vercel desplegará automáticamente a producción"
+          echo "🌐 URL: https://ver-ip.vercel.app"
+          echo "⏱️ Fecha: $(date)"

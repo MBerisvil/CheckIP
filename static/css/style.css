@@ -703,6 +703,9 @@ body {
     margin: 0;
     font-weight: 400;
     text-align: right;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 /* Agregar padding al body para que el contenido no se oculte detrás del footer */
@@ -744,6 +747,26 @@ body {
 
 .top-bar-logo:hover {
     transform: scale(1.1);
+}
+
+/* Admin Link Styles */
+.admin-link-footer {
+    color: #7f8c8d;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.3s ease;
+    margin-left: 4px;
+}
+
+.admin-link-footer:hover {
+    color: #667eea;
+}
+
+.admin-link-footer .admin-icon {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
 }
 
 /* AbuseIPDB Professional Section */
