@@ -18,8 +18,11 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Cargar variables de entorno
+# Cargar variables de entorno (.env solo se carga en desarrollo local, no en Vercel)
 load_dotenv()
+
+# Detectar entorno de producción (Vercel)
+IS_PRODUCTION = os.getenv('VERCEL_ENV') in ['production', 'preview'] or os.getenv('VERCEL') == '1'
 
 # Imports de seguridad
 try:
@@ -48,7 +51,18 @@ DEFAULT_ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
 DEFAULT_ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
 API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
+
+# Configuración de base de datos
+# En producción (Vercel): usa PostgreSQL de Neon desde DATABASE_URL
+# En desarrollo: usa SQLite local o PostgreSQL si DATABASE_URL está definida
+if IS_PRODUCTION:
+    # En Vercel, DATABASE_URL debe estar configurada con PostgreSQL de Neon
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL no configurada en producción. Configure la variable de entorno en Vercel.")
+else:
+    # En desarrollo local: SQLite por defecto o PostgreSQL si se especifica
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
 
 # Constantes de categorías de AbuseIPDB
 ABUSE_CATEGORIES = {
@@ -87,8 +101,32 @@ DNS_BLACKLISTS = {
 
 # Inicializar Flask app
 app = Flask(__name__)
+
+# Configuración de base de datos
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configuración adicional para PostgreSQL en Vercel
+if IS_PRODUCTION and DATABASE_URL and DATABASE_URL.startswith('postgres'):
+    # PostgreSQL requiere pool de conexiones más robusto en serverless
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,  # Verificar conexiones antes de usarlas
+        'pool_recycle': 300,    # Reciclar conexiones cada 5 minutos
+        'pool_size': 2,         # Reducir pool size para serverless
+        'max_overflow': 0       # No permitir conexiones extra
+    }
+
+# Configurar SECRET_KEY (CRÍTICO para sesiones y CSRF)
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError("SECRET_KEY no configurada en producción. Configure la variable de entorno en Vercel.")
+    else:
+        # Solo en desarrollo: usar clave por defecto con advertencia
+        SECRET_KEY = 'dev-secret-key-change-in-production'
+        logger.warning("⚠️ Usando SECRET_KEY de desarrollo - NO USAR EN PRODUCCIÓN")
+
+app.config['SECRET_KEY'] = SECRET_KEY
 
 # Configurar seguridad
 if SECURITY_ENABLED:
@@ -97,10 +135,9 @@ if SECURITY_ENABLED:
     logger.info(f"✅ VerIP v{APP_VERSION} - Configuración de seguridad activada")
 else:
     csrf, limiter = None, None
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     logger.warning("⚠️ Ejecutando sin protecciones de seguridad adicionales")
 
-# Inicializar extensiones
+# Inicializar extensiones de base de datos
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)

@@ -1,13 +1,25 @@
+# Framework principal
 Flask==2.3.3
-requests==2.31.0
-gunicorn==21.2.0
-python-dotenv==1.2.1
-Flask-Login==0.6.3
 Werkzeug==2.3.7
+
+# Base de datos (PostgreSQL para producción)
 Flask-SQLAlchemy==3.0.5
 psycopg2-binary==2.9.9
+SQLAlchemy==2.0.23
 
-# Dependencias de seguridad
+# Autenticación y sesiones
+Flask-Login==0.6.3
+
+# HTTP requests
+requests==2.31.0
+
+# Variables de entorno (solo necesario en desarrollo local)
+python-dotenv==1.2.1
+
+# Seguridad (CSRF, Rate Limiting, HTTPS)
 Flask-WTF==1.2.1
 Flask-Limiter==3.5.0
 Flask-Talisman==1.1.0
+
+# Servidor WSGI (no necesario en Vercel, pero útil para desarrollo)
+gunicorn==21.2.0
