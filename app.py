@@ -663,7 +663,17 @@ def verify_ip(ip):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        print(f"Error en index: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': 'Error al cargar la página principal',
+            'details': str(e),
+            'message': 'La aplicación está iniciando. Intente nuevamente en unos segundos.'
+        }), 500
 
 @app.route('/health')
 def health_check():
