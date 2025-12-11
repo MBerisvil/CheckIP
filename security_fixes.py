@@ -285,35 +285,40 @@ def setup_secure_logging():
     """
     from logging.handlers import RotatingFileHandler
     
-    # Crear directorio de logs si no existe
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir, mode=0o750)
-    
     # Configurar logger
     logger = logging.getLogger('verip')
     logger.setLevel(logging.INFO)
     
-    # Handler para archivo con rotación
-    file_handler = RotatingFileHandler(
-        os.path.join(log_dir, 'app.log'),
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=10
-    )
+    # Detectar si estamos en Vercel (sistema de archivos de solo lectura)
+    is_vercel = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
     
-    # Handler para consola
+    # Solo configurar archivo de log si NO estamos en Vercel
+    if not is_vercel:
+        # Crear directorio de logs si no existe
+        log_dir = 'logs'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, mode=0o750)
+        
+        # Handler para archivo con rotación
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, 'app.log'),
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=10
+        )
+        
+        # Formato para archivo
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    # Handler para consola (siempre activo)
     console_handler = logging.StreamHandler()
-    
-    # Formato
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    
-    logger.addHandler(file_handler)
+    console_handler.setFormatter(logging.Formatter(
+        '%(levelname)s: %(message)s'
+    ))
     logger.addHandler(console_handler)
     
     return logger
