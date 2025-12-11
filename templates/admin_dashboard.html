@@ -585,25 +585,42 @@
             }
         });
         
-        // Cargar métricas de Neon
-        loadNeonMetrics();
+        // Cargar métricas de Neon solo si estamos autenticados
+        // DESHABILITADO temporalmente para debugging
+        // setTimeout(() => {
+        //     loadNeonMetrics();
+        // }, 1000);
     </script>
     
     <script>
         // Función para cargar métricas de Neon
         async function loadNeonMetrics() {
+            const container = document.getElementById('neonMetrics');
+            if (!container) {
+                console.log('Contenedor de métricas Neon no encontrado');
+                return;
+            }
+            
             try {
                 const response = await fetch('/api/neon/metrics');
+                
+                // Si hay error de red o servidor
+                if (!response.ok) {
+                    console.warn('Error al cargar métricas Neon:', response.status);
+                    displayNeonError('Servicio no disponible');
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
                     displayNeonMetrics(data);
                 } else {
-                    displayNeonError(data.error || 'Error desconocido');
+                    displayNeonError(data.message || data.error || 'NEON_API_KEY no configurada');
                 }
             } catch (error) {
                 console.error('Error cargando métricas de Neon:', error);
-                displayNeonError(error.message);
+                displayNeonError('No se pudo conectar con el servicio de monitoreo');
             }
         }
         
