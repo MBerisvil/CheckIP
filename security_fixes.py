@@ -275,14 +275,14 @@ def require_api_key_secure(f):
 # 4. LOGGING SEGURO
 # ============================================
 
-def setup_secure_logging():
-    """
+"""def setup_secure_logging():
+    ""
     Configurar logging seguro con rotación de archivos.
     
     Usage:
         logger = setup_secure_logging()
         logger.info("Mensaje seguro")
-    """
+    ""
     from logging.handlers import RotatingFileHandler
     
     # Configurar logger
@@ -295,7 +295,7 @@ def setup_secure_logging():
     # Solo configurar archivo de log si NO estamos en Vercel
     if not is_vercel:
         # Crear directorio de logs si no existe
-        log_dir = 'logs'
+        log_dir = "/tmp/logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, mode=0o750)
         
@@ -324,7 +324,47 @@ def setup_secure_logging():
     return logger
 
 # Crear logger global
+logger = setup_secure_logging()"""
+
+
+def setup_secure_logging():
+    """
+    Configurar logging seguro con rotación de archivos.
+    """
+    from logging.handlers import RotatingFileHandler
+    import logging, os
+
+    logger = logging.getLogger('verip')
+    logger.setLevel(logging.INFO)
+
+    is_vercel = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
+
+    # Definir directorio según entorno
+    log_dir = "/tmp/logs" if is_vercel else "logs"
+    os.makedirs(log_dir, mode=0o750, exist_ok=True)
+
+    # Handler para archivo con rotación
+    file_handler = RotatingFileHandler(
+        os.path.join(log_dir, 'app.log'),
+        maxBytes=10*1024*1024,
+        backupCount=10
+    )
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Handler para consola
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    logger.addHandler(console_handler)
+
+    return logger
+
 logger = setup_secure_logging()
+
 
 # ============================================
 # 5. MANEJO DE ERRORES SEGURO
