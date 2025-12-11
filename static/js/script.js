@@ -1,5 +1,17 @@
 let map;
 let marker;
+let csrfToken = null;
+
+// Obtener CSRF token al cargar la página
+fetch('/csrf-token')
+    .then(r => r.json())
+    .then(data => {
+        csrfToken = data.csrf_token;
+        console.log('✅ CSRF token obtenido');
+    })
+    .catch(err => {
+        console.warn('⚠️ No se pudo obtener CSRF token (protección desactivada):', err);
+    });
 
 // Función auxiliar para establecer contenido de forma segura
 function safeSetTextContent(elementId, content) {
@@ -74,11 +86,18 @@ document.addEventListener('DOMContentLoaded', function() {
         lucide.createIcons();
 
         try {
+            // Preparar headers con CSRF token si está disponible
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            
+            if (csrfToken) {
+                headers['X-CSRFToken'] = csrfToken;
+            }
+            
             const response = await fetch('/verify', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: headers,
                 body: JSON.stringify({ ip: ip })
             });
 

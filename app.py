@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Imports de terceros
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
@@ -20,6 +20,27 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # Cargar variables de entorno
 load_dotenv()
+
+# Imports de seguridad
+try:
+    from security_fixes import (
+        configure_security,
+        setup_error_handlers,
+        setup_secure_logging,
+        validate_and_sanitize_ip,
+        require_api_key_secure,
+        create_csrf_endpoint,
+        validate_json_request,
+        sanitize_log_input
+    )
+    SECURITY_ENABLED = True
+    logger = setup_secure_logging()
+except ImportError:
+    SECURITY_ENABLED = False
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ security_fixes.py no encontrado - ejecutando sin protecciones adicionales")
 
 # Constantes de configuración
 APP_VERSION = '3.5'
@@ -66,9 +87,18 @@ DNS_BLACKLISTS = {
 
 # Inicializar Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configurar seguridad
+if SECURITY_ENABLED:
+    csrf, limiter = configure_security(app)
+    setup_error_handlers(app)
+    logger.info(f"✅ VerIP v{APP_VERSION} - Configuración de seguridad activada")
+else:
+    csrf, limiter = None, None
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    logger.warning("⚠️ Ejecutando sin protecciones de seguridad adicionales")
 
 # Inicializar extensiones
 db = SQLAlchemy(app)
@@ -162,15 +192,28 @@ def init_admin_if_needed():
 def load_user(user_id):
     return User.get(user_id)
 
-# Decorador para API key
+# Middleware de validación JSON
+if SECURITY_ENABLED:
+    @app.before_request
+    def check_json():
+        return validate_json_request()
+    
+    # Crear endpoint CSRF
+    create_csrf_endpoint(app)
+
+# Decorador para API key (mantener compatibilidad)
 def require_api_key(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-Key')
-        if not api_key or api_key != API_MONITOR_KEY:
-            return jsonify({'error': 'API key inválida o ausente'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
+    """Decorador de API key - usa versión segura si está disponible"""
+    if SECURITY_ENABLED:
+        return require_api_key_secure(f)
+    else:
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            api_key = request.headers.get('X-API-Key')
+            if not api_key or api_key != API_MONITOR_KEY:
+                return jsonify({'error': 'API key inválida o ausente'}), 401
+            return f(*args, **kwargs)
+        return decorated_function
 
 def generate_simulated_reputation_data(ip):
     """Generar datos simulados de reputación para demostración"""
@@ -374,10 +417,11 @@ def calculate_simulated_categories(reputation):
 
 def verify_ip(ip):
     """Función principal de verificación - usa AbuseIPDB y blacklists DNS"""
-    # Validar IP
+    # Validar IP (ya validada en la ruta, esta es validación adicional)
     try:
         socket.inet_aton(ip)
     except socket.error:
+        logger.warning(f"IP inválida después de validación previa: {sanitize_log_input(ip) if SECURITY_ENABLED else ip[:50]}")
         return {'error': f"'{ip}' no es una dirección IP válida."}
 
     start_time = time.time()
@@ -508,11 +552,24 @@ def health_check():
 
 @app.route('/verify', methods=['POST'])
 def verify():
-    data = request.get_json()
-    ip = data.get('ip', '').strip()
+    # Aplicar rate limiting si está disponible
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("10 per minute")(lambda: None)()
     
-    if not ip:
+    data = request.get_json()
+    ip_input = data.get('ip', '').strip()
+    
+    if not ip_input:
         return jsonify({'error': 'Por favor ingresa una dirección IP'}), 400
+    
+    # Validación segura de IP
+    if SECURITY_ENABLED:
+        ip, error = validate_and_sanitize_ip(ip_input)
+        if error:
+            logger.warning(f"Intento de IP inválida: {sanitize_log_input(ip_input[:50])} desde {request.remote_addr}")
+            return jsonify({'error': error}), 400
+    else:
+        ip = ip_input
     
     result = verify_ip(ip)
     return jsonify(result)
@@ -523,6 +580,10 @@ def verify():
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
+    # Rate limiting para prevenir brute force
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("5 per minute")(lambda: None)()
+    
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
     
@@ -536,12 +597,21 @@ def admin_login():
     user = User.query.filter_by(username=username).first()
     
     if not user or not user.check_password(password):
+        if SECURITY_ENABLED:
+            logger.warning(f"Intento de login fallido para '{sanitize_log_input(username)}' desde {request.remote_addr}")
+            time.sleep(1)  # Delay anti-brute-force
         flash('Usuario o contraseña incorrectos', 'error')
         return render_template('admin_login.html')
     
+    # Regenerar sesión tras login exitoso
+    if SECURITY_ENABLED:
+        session.permanent = True
+        session.modified = True
+        logger.info(f"Login exitoso: {sanitize_log_input(username)} desde {request.remote_addr}")
+    
     user.last_login = datetime.utcnow()
     db.session.commit()
-    login_user(user)
+    login_user(user, remember=False)
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/logout')
@@ -604,6 +674,10 @@ def admin_dashboard():
 @require_api_key
 def api_status():
     """Endpoint para verificar el estado del servicio"""
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
+    
     try:
         db.session.execute('SELECT 1')
         last_query = QueryLog.query.order_by(QueryLog.timestamp.desc()).first()
@@ -628,6 +702,10 @@ def api_status():
 @require_api_key
 def api_stats():
     """Endpoint para obtener estadísticas detalladas"""
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
+    
     period = request.args.get('period', '7d')
     
     period_map = {'24h': timedelta(hours=24), '30d': timedelta(days=30), '7d': timedelta(days=7)}
@@ -683,6 +761,10 @@ def api_stats():
 @require_api_key
 def api_recent():
     """Endpoint para obtener consultas recientes"""
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
+    
     limit = int(request.args.get('limit', 50))
     
     queries = QueryLog.query.order_by(QueryLog.timestamp.desc()).limit(limit).all()
@@ -700,4 +782,17 @@ def api_recent():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # Verificar modo debug
+    debug_mode = os.getenv('FLASK_ENV') != 'production'
+    
+    if debug_mode:
+        logger.info("🔧 Modo desarrollo - Debug activado")
+    else:
+        logger.info("🚀 Modo producción")
+    
+    if SECURITY_ENABLED:
+        logger.info("✅ Protecciones de seguridad activas")
+    else:
+        logger.warning("⚠️ Ejecutando sin protecciones de seguridad adicionales")
+    
+    app.run(debug=debug_mode, port=5000, host='127.0.0.1' if debug_mode else '0.0.0.0')
