@@ -742,65 +742,108 @@ def admin_logout():
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
-    # Estadísticas generales
-    total_queries = QueryLog.query.count()
-    today_queries = QueryLog.query.filter(
-        QueryLog.timestamp >= datetime.utcnow().date()
-    ).count()
+    try:
+        # Inicializar BD si no existe
+        init_db()
+        
+        # Estadísticas generales
+        total_queries = QueryLog.query.count()
+        today_queries = QueryLog.query.filter(
+            QueryLog.timestamp >= datetime.utcnow().date()
+        ).count()
+    except Exception as e:
+        print(f"Error en dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        # Retornar dashboard con datos vacíos
+        stats = {
+            'total_queries': 0,
+            'today_queries': 0,
+            'queries_24h': 0,
+            'top_ips': [],
+            'daily_queries': [],
+            'avg_trust_score': 0,
+            'high_risk_count': 0,
+            'whitelisted_count': 0,
+            'country_stats': [],
+            'api_queries': 0,
+            'simulated_queries': 0
+        }
+        return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
     
-    # Últimas 24 horas
-    last_24h = datetime.utcnow() - timedelta(hours=24)
-    queries_24h = QueryLog.query.filter(QueryLog.timestamp >= last_24h).count()
-    
-    # IPs más consultadas
-    from sqlalchemy import func
-    top_ips = db.session.query(
-        QueryLog.ip_address,
-        func.count(QueryLog.ip_address).label('count')
-    ).group_by(QueryLog.ip_address).order_by(func.count(QueryLog.ip_address).desc()).limit(10).all()
-    
-    # Consultas por día (últimos 7 días)
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
-    daily_queries = db.session.query(
-        func.date(QueryLog.timestamp).label('date'),
-        func.count(QueryLog.id).label('count')
-    ).filter(QueryLog.timestamp >= seven_days_ago).group_by(func.date(QueryLog.timestamp)).all()
-    
-    # Estadísticas de confianza
-    avg_trust_score = db.session.query(func.avg(QueryLog.trust_score)).scalar() or 0
-    high_risk_count = QueryLog.query.filter(QueryLog.abuse_confidence > 50).count()
-    whitelisted_count = QueryLog.query.filter(QueryLog.is_whitelisted == True).count()
-    
-    # Consultas por país
-    country_stats = db.session.query(
-        QueryLog.country_code,
-        func.count(QueryLog.country_code).label('count')
-    ).filter(QueryLog.country_code.isnot(None)).group_by(QueryLog.country_code).order_by(func.count(QueryLog.country_code).desc()).limit(10).all()
-    
-    # API usage
-    api_queries = QueryLog.query.filter(QueryLog.api_used == True).count()
-    simulated_queries = QueryLog.query.filter(QueryLog.api_used == False).count()
-    
-    # Convertir Row objects a listas/tuplas para JSON serialization
-    top_ips_list = [(ip, count) for ip, count in top_ips]
-    daily_queries_list = [(str(date), count) for date, count in daily_queries]
-    country_stats_list = [(country, count) for country, count in country_stats]
-    
-    stats = {
-        'total_queries': total_queries,
-        'today_queries': today_queries,
-        'queries_24h': queries_24h,
-        'top_ips': top_ips_list,
-        'daily_queries': daily_queries_list,
-        'avg_trust_score': round(avg_trust_score, 2),
-        'high_risk_count': high_risk_count,
-        'whitelisted_count': whitelisted_count,
-        'country_stats': country_stats_list,
-        'api_queries': api_queries,
-        'simulated_queries': simulated_queries
-    }
-    
-    return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
+    try:
+        # Últimas 24 horas
+        last_24h = datetime.utcnow() - timedelta(hours=24)
+        queries_24h = QueryLog.query.filter(QueryLog.timestamp >= last_24h).count()
+        
+        # IPs más consultadas
+        from sqlalchemy import func
+        top_ips = db.session.query(
+            QueryLog.ip_address,
+            func.count(QueryLog.ip_address).label('count')
+        ).group_by(QueryLog.ip_address).order_by(func.count(QueryLog.ip_address).desc()).limit(10).all()
+        
+        # Consultas por día (últimos 7 días)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        daily_queries = db.session.query(
+            func.date(QueryLog.timestamp).label('date'),
+            func.count(QueryLog.id).label('count')
+        ).filter(QueryLog.timestamp >= seven_days_ago).group_by(func.date(QueryLog.timestamp)).all()
+        
+        # Estadísticas de confianza
+        avg_trust_score = db.session.query(func.avg(QueryLog.trust_score)).scalar() or 0
+        high_risk_count = QueryLog.query.filter(QueryLog.abuse_confidence > 50).count()
+        whitelisted_count = QueryLog.query.filter(QueryLog.is_whitelisted == True).count()
+        
+        # Consultas por país
+        country_stats = db.session.query(
+            QueryLog.country_code,
+            func.count(QueryLog.country_code).label('count')
+        ).filter(QueryLog.country_code.isnot(None)).group_by(QueryLog.country_code).order_by(func.count(QueryLog.country_code).desc()).limit(10).all()
+        
+        # API usage
+        api_queries = QueryLog.query.filter(QueryLog.api_used == True).count()
+        simulated_queries = QueryLog.query.filter(QueryLog.api_used == False).count()
+        
+        # Convertir Row objects a listas/tuplas para JSON serialization
+        top_ips_list = [(ip, count) for ip, count in top_ips]
+        daily_queries_list = [(str(date), count) for date, count in daily_queries]
+        country_stats_list = [(country, count) for country, count in country_stats]
+        
+        stats = {
+            'total_queries': total_queries,
+            'today_queries': today_queries,
+            'queries_24h': queries_24h,
+            'top_ips': top_ips_list,
+            'daily_queries': daily_queries_list,
+            'avg_trust_score': round(avg_trust_score, 2),
+            'high_risk_count': high_risk_count,
+            'whitelisted_count': whitelisted_count,
+            'country_stats': country_stats_list,
+            'api_queries': api_queries,
+            'simulated_queries': simulated_queries
+        }
+        
+        return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
+    except Exception as e:
+        print(f"Error generando estadísticas dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        # Retornar dashboard con datos mínimos
+        stats = {
+            'total_queries': 0,
+            'today_queries': 0,
+            'queries_24h': 0,
+            'top_ips': [],
+            'daily_queries': [],
+            'avg_trust_score': 0,
+            'high_risk_count': 0,
+            'whitelisted_count': 0,
+            'country_stats': [],
+            'api_queries': 0,
+            'simulated_queries': 0
+        }
+        return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
 
 # ============================================
 # API DE MONITOREO
@@ -922,10 +965,23 @@ def api_recent():
 def api_neon_metrics():
     """Endpoint para obtener métricas de Neon"""
     try:
+        # Verificar si la API key está configurada
+        neon_api_key = os.getenv('NEON_API_KEY')
+        if not neon_api_key:
+            return jsonify({
+                'success': False,
+                'error': 'NEON_API_KEY no configurada',
+                'message': 'Configure la variable de entorno NEON_API_KEY en Vercel'
+            }), 200  # 200 para que no crashee
+        
         # Obtener proyectos
         projects = get_neon_projects()
         if not projects:
-            return jsonify({'error': 'No se pudo conectar con Neon API'}), 500
+            return jsonify({
+                'success': False,
+                'error': 'No se pudo conectar con Neon API',
+                'message': 'Verifique que la API key sea válida'
+            }), 200
         
         # Por ahora tomar el primer proyecto (puedes ajustar esto)
         project = projects[0] if projects else None
