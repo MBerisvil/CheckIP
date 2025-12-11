@@ -21,20 +21,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Cargar variables de entorno
 load_dotenv()
 
+# Detectar entorno Vercel/Serverless
+IS_VERCEL = os.getenv('VERCEL_ENV') is not None or os.getenv('VERCEL') is not None
+DISABLE_RATE_LIMITING = os.getenv('DISABLE_RATE_LIMITING') == '1'
+
 # Imports de seguridad
 try:
-    from security_fixes import (
-        configure_security,
-        setup_error_handlers,
-        setup_secure_logging,
-        validate_and_sanitize_ip,
-        require_api_key_secure,
-        create_csrf_endpoint,
-        validate_json_request,
-        sanitize_log_input
-    )
-    SECURITY_ENABLED = True
-    logger = setup_secure_logging()
+    # En Vercel, deshabilitar funciones incompatibles con serverless
+    if IS_VERCEL:
+        # Usar versión simplificada sin rate limiting
+        SECURITY_ENABLED = False
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        logger.info("🚀 Ejecutando en Vercel - Seguridad básica activada")
+    else:
+        from security_fixes import (
+            configure_security,
+            setup_error_handlers,
+            setup_secure_logging,
+            validate_and_sanitize_ip,
+            require_api_key_secure,
+            create_csrf_endpoint,
+            validate_json_request,
+            sanitize_log_input
+        )
+        SECURITY_ENABLED = True
+        logger = setup_secure_logging()
 except ImportError:
     SECURITY_ENABLED = False
     import logging

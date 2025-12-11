@@ -1,0 +1,52 @@
+# Archivos de desarrollo
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Entorno virtual
+.venv/
+venv/
+ENV/
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuración local
+.env
+.env.local
+
+# Documentación
+documentacion/
+README.md
+*.md
+
+# Git
+.git/
+.gitignore
+
+# Testing
+tests/
+*.test.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Security fixes (no compatible con Vercel serverless)
+security_fixes.py
+security_audit.sh
+requirements-security.txt
