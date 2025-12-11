@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
@@ -131,6 +132,103 @@ def init_admin_if_needed():
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id)
+
+# ============================================
+# FUNCIONES PARA NEON MONITORING
+# ============================================
+
+def get_neon_projects():
+    """Obtener lista de proyectos en Neon"""
+    neon_api_key = os.getenv('NEON_API_KEY')
+    if not neon_api_key:
+        return None
+    
+    try:
+        response = requests.get(
+            'https://console.neon.tech/api/v2/projects',
+            headers={
+                'Authorization': f'Bearer {neon_api_key}',
+                'Accept': 'application/json'
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json().get('projects', [])
+    except Exception as e:
+        print(f"Error obteniendo proyectos Neon: {e}")
+    return None
+
+def get_neon_project_details(project_id):
+    """Obtener detalles de un proyecto específico"""
+    neon_api_key = os.getenv('NEON_API_KEY')
+    if not neon_api_key:
+        return None
+    
+    try:
+        response = requests.get(
+            f'https://console.neon.tech/api/v2/projects/{project_id}',
+            headers={
+                'Authorization': f'Bearer {neon_api_key}',
+                'Accept': 'application/json'
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"Error obteniendo detalles del proyecto: {e}")
+    return None
+
+def get_neon_consumption(project_id):
+    """Obtener métricas de consumo del proyecto"""
+    neon_api_key = os.getenv('NEON_API_KEY')
+    if not neon_api_key:
+        return None
+    
+    try:
+        # Obtener consumo desde hace 7 días
+        from_date = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        to_date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        response = requests.get(
+            f'https://console.neon.tech/api/v2/projects/{project_id}/consumption_history/granular',
+            headers={
+                'Authorization': f'Bearer {neon_api_key}',
+                'Accept': 'application/json'
+            },
+            params={
+                'from': from_date,
+                'to': to_date,
+                'granularity': 'daily'
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"Error obteniendo consumo: {e}")
+    return None
+
+def get_neon_branches(project_id):
+    """Obtener branches del proyecto"""
+    neon_api_key = os.getenv('NEON_API_KEY')
+    if not neon_api_key:
+        return None
+    
+    try:
+        response = requests.get(
+            f'https://console.neon.tech/api/v2/projects/{project_id}/branches',
+            headers={
+                'Authorization': f'Bearer {neon_api_key}',
+                'Accept': 'application/json'
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json().get('branches', [])
+    except Exception as e:
+        print(f"Error obteniendo branches: {e}")
+    return None
 
 # Decorador para API key
 def require_api_key(f):
@@ -436,6 +534,9 @@ def verify_ip(ip):
     
     # Registrar consulta en base de datos
     try:
+        # Inicializar BD si no existe
+        init_db()
+        
         log_entry = QueryLog(
             ip_address=ip,
             abuse_confidence=reputation['abuse_confidence'],
@@ -449,8 +550,11 @@ def verify_ip(ip):
         )
         db.session.add(log_entry)
         db.session.commit()
+        print(f"✅ Consulta registrada: IP={ip}, Trust={trust_score}")
     except Exception as e:
-        print(f"Error registrando consulta: {e}")
+        print(f"❌ Error registrando consulta: {e}")
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
     
     # Simular estructura de categorías para compatibilidad con frontend
@@ -812,6 +916,60 @@ def api_recent():
             'is_whitelisted': q.is_whitelisted
         } for q in queries]
     })
+
+@app.route('/api/neon/metrics')
+@login_required
+def api_neon_metrics():
+    """Endpoint para obtener métricas de Neon"""
+    try:
+        # Obtener proyectos
+        projects = get_neon_projects()
+        if not projects:
+            return jsonify({'error': 'No se pudo conectar con Neon API'}), 500
+        
+        # Por ahora tomar el primer proyecto (puedes ajustar esto)
+        project = projects[0] if projects else None
+        if not project:
+            return jsonify({'error': 'No hay proyectos disponibles'}), 404
+        
+        project_id = project['id']
+        
+        # Obtener detalles del proyecto
+        details = get_neon_project_details(project_id)
+        
+        # Obtener branches
+        branches = get_neon_branches(project_id)
+        
+        # Obtener consumo
+        consumption = get_neon_consumption(project_id)
+        
+        return jsonify({
+            'success': True,
+            'project': {
+                'id': project_id,
+                'name': project.get('name'),
+                'region': project.get('region_id'),
+                'created_at': project.get('created_at'),
+                'platform_id': project.get('platform_id')
+            },
+            'branches': [{
+                'id': b.get('id'),
+                'name': b.get('name'),
+                'created_at': b.get('created_at'),
+                'updated_at': b.get('updated_at'),
+                'current_state': b.get('current_state')
+            } for b in (branches or [])],
+            'consumption': consumption,
+            'database_size': details.get('database_size_bytes', 0) if details else 0,
+            'connection_info': {
+                'pooler_enabled': details.get('settings', {}).get('pooler_enabled', False) if details else False
+            }
+        })
+    except Exception as e:
+        print(f"Error en api_neon_metrics: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
