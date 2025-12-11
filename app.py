@@ -1,39 +1,141 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
+# Imports estándar
+import hashlib
 import http.client
 import json
+import os
+import random
 import socket
 import time
-import os
-from dotenv import load_dotenv
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import wraps
+from concurrent.futures import ThreadPoolExecutor
 
-# Cargar variables de entorno desde .env (solo en desarrollo)
+# Imports de terceros
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# Cargar variables de entorno (.env solo se carga en desarrollo local, no en Vercel)
 load_dotenv()
 
-# VerIP v3.5 - Panel de Administrador + API de Monitoreo + Gráficos AbuseIPDB
+# Detectar entorno de producción (Vercel)
+IS_PRODUCTION = os.getenv('VERCEL_ENV') in ['production', 'preview'] or os.getenv('VERCEL') == '1'
 
-app = Flask(__name__)
+# Imports de seguridad
+try:
+    from security_fixes import (
+        configure_security,
+        setup_error_handlers,
+        setup_secure_logging,
+        validate_and_sanitize_ip,
+        require_api_key_secure,
+        create_csrf_endpoint,
+        validate_json_request,
+        sanitize_log_input
+    )
+    SECURITY_ENABLED = True
+except ImportError:
+    SECURITY_ENABLED = False
+    import logging
+    logging.basicConfig(level=logging.INFO)
 
-# Configuración segura
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Configuración de base de datos (SQLite local o PostgreSQL Neon)
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Configuración de API
+# Constantes de configuración
+APP_VERSION = '3.5'
+DEFAULT_ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+DEFAULT_ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
 API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
 
-# Inicializar extensiones
+# Configuración de base de datos
+# En producción (Vercel): usa PostgreSQL de Neon desde DATABASE_URL
+# En desarrollo: usa SQLite local o PostgreSQL si DATABASE_URL está definida
+if IS_PRODUCTION:
+    # En Vercel, DATABASE_URL debe estar configurada con PostgreSQL de Neon
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL no configurada en producción. Configure la variable de entorno en Vercel.")
+else:
+    # En desarrollo local: SQLite por defecto o PostgreSQL si se especifica
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
+
+# Constantes de categorías de AbuseIPDB
+ABUSE_CATEGORIES = {
+    3: "Fraud", 4: "DDoS Attack", 5: "FTP Brute-Force", 6: "Ping of Death",
+    7: "Phishing", 8: "Fraud VoIP", 9: "Open Proxy", 10: "Web Spam",
+    11: "Email Spam", 12: "Blog Spam", 13: "VPN IP", 14: "Port Scan",
+    15: "Hacking", 16: "SQL Injection", 17: "Spoofing", 18: "Brute-Force",
+    19: "Bad Web Bot", 20: "Exploited Host", 21: "Web App Attack",
+    22: "SSH", 23: "IoT Targeted"
+}
+
+# Blacklists DNS principales
+DNS_BLACKLISTS = {
+    'zen.spamhaus.org': 'Spamhaus ZEN',
+    'sbl.spamhaus.org': 'Spamhaus SBL',
+    'cbl.spamhaus.org': 'Spamhaus CBL',
+    'css.spamhaus.org': 'Spamhaus CSS',
+    'pbl.spamhaus.org': 'Spamhaus PBL',
+    'bl.spamcop.net': 'SpamCop',
+    'multi.surbl.org': 'SURBL Multi',
+    'multi.uribl.com': 'URIBL Multi',
+    'dnsbl.sorbs.net': 'SORBS DNSBL',
+    'spam.dnsbl.sorbs.net': 'SORBS Spam',
+    'http.dnsbl.sorbs.net': 'SORBS HTTP',
+    'b.barracudacentral.org': 'Barracuda',
+    'cbl.abuseat.org': 'CBL Abuseat',
+    'psbl.surriel.com': 'PSBL',
+    'ips.backscatterer.org': 'Backscatterer',
+    'dnsbl.njabl.org': 'NJABL',
+    'rbl.efnetrbl.org': 'EFNet RBL',
+    'blackholes.mail-abuse.org': 'Mail Abuse',
+    'relays.mail-abuse.org': 'Mail Abuse Relays',
+    'dynablock.njabl.org': 'NJABL Dynamic',
+    'no-more-funn.moensted.dk': 'No More Funn'
+}
+
+# Inicializar Flask app
+app = Flask(__name__)
+
+# Configuración de base de datos
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Configuración adicional para PostgreSQL en Vercel
+if IS_PRODUCTION and DATABASE_URL and DATABASE_URL.startswith('postgres'):
+    # PostgreSQL requiere pool de conexiones más robusto en serverless
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,  # Verificar conexiones antes de usarlas
+        'pool_recycle': 300,    # Reciclar conexiones cada 5 minutos
+        'pool_size': 2,         # Reducir pool size para serverless
+        'max_overflow': 0       # No permitir conexiones extra
+    }
+
+# Configurar SECRET_KEY (CRÍTICO para sesiones y CSRF)
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError("SECRET_KEY no configurada en producción. Configure la variable de entorno en Vercel.")
+    else:
+        # Solo en desarrollo: usar clave por defecto con advertencia
+        SECRET_KEY = 'dev-secret-key-change-in-production'
+
+
+app.config['SECRET_KEY'] = SECRET_KEY
+
+# Configurar seguridad
+if SECURITY_ENABLED:
+    csrf, limiter = configure_security(app)
+    setup_error_handlers(app)
+
+else:
+    csrf, limiter = None, None
+
+
+# Inicializar extensiones de base de datos
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -58,13 +160,10 @@ class User(UserMixin, db.Model):
     def get(user_id):
         """Obtener usuario por ID"""
         try:
-            # Intentar convertir a int si es posible
-            if isinstance(user_id, str) and user_id.isdigit():
+            if isinstance(user_id, str):
+                if not user_id.isdigit():
+                    return None
                 user_id = int(user_id)
-            elif isinstance(user_id, str):
-                # Si es un string no numérico (como 'admin'), retornar None
-                # Las sesiones viejas serán invalidadas
-                return None
             return User.query.get(int(user_id))
         except (ValueError, TypeError):
             return None
@@ -103,131 +202,130 @@ def init_db():
 def init_admin_if_needed():
     """Inicializar usuario admin si no existe ninguno"""
     try:
-        # Asegurar que las tablas existan
         init_db()
         
-        admin_exists = User.query.filter_by(is_admin=True).first()
+        if User.query.filter_by(is_admin=True).first():
+            return False
         
-        if not admin_exists:
-            default_username = os.getenv('ADMIN_USERNAME', 'admin')
-            default_password = os.getenv('ADMIN_PASSWORD', 'admin123')
-            
-            admin_user = User(
-                username=default_username,
-                password_hash=generate_password_hash(default_password),
-                email=None,
-                is_admin=True,
-                created_at=datetime.utcnow()
-            )
-            
-            db.session.add(admin_user)
-            db.session.commit()
-            return True
+        admin_user = User(
+            username=DEFAULT_ADMIN_USERNAME,
+            password_hash=generate_password_hash(DEFAULT_ADMIN_PASSWORD),
+            email=None,
+            is_admin=True,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(admin_user)
+        db.session.commit()
+        return True
     except Exception as e:
         db.session.rollback()
         print(f"Error inicializando admin: {e}")
-    return False
+        return False
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id)
 
-# Decorador para API key
+# Middleware de validación JSON
+if SECURITY_ENABLED:
+    @app.before_request
+    def check_json():
+        return validate_json_request()
+    
+    # Crear endpoint CSRF
+    create_csrf_endpoint(app)
+
+# Decorador para API key (mantener compatibilidad)
 def require_api_key(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-Key')
-        if not api_key or api_key != API_MONITOR_KEY:
-            return jsonify({'error': 'API key inválida o ausente'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
+    """Decorador de API key - usa versión segura si está disponible"""
+    if SECURITY_ENABLED:
+        return require_api_key_secure(f)
+    else:
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            api_key = request.headers.get('X-API-Key')
+            if not api_key or api_key != API_MONITOR_KEY:
+                return jsonify({'error': 'API key inválida o ausente'}), 401
+            return f(*args, **kwargs)
+        return decorated_function
+
+def generate_simulated_reputation_data(ip):
+    """Generar datos simulados de reputación para demostración"""
+    ip_hash = int(hashlib.md5(ip.encode()).hexdigest()[:8], 16)
+    random.seed(ip_hash)
+    
+    abuse_confidence = random.choice([0, 0, 0, 0, 0, 5, 15, 25, 45, 75, 90])
+    total_reports = random.choice([0, 0, 0, 1, 3, 8, 25, 50, 150, 500]) if abuse_confidence > 0 else 0
+    is_whitelisted = abuse_confidence == 0 and random.random() < 0.1
+    
+    # Categorías según nivel de confianza
+    if abuse_confidence > 50:
+        categories = random.sample([4, 5, 15, 18, 20], k=random.randint(1, 3))
+    elif abuse_confidence > 25:
+        categories = random.sample([8, 9, 14, 22], k=random.randint(0, 2))
+    elif abuse_confidence > 0:
+        categories = random.sample([11, 13, 19], k=random.randint(0, 1))
+    else:
+        categories = []
+    
+    return {
+        'success': True,
+        'ip': ip,
+        'abuse_confidence': abuse_confidence,
+        'total_reports': total_reports,
+        'is_whitelisted': is_whitelisted,
+        'country_code': random.choice(['US', 'DE', 'FR', 'UK', 'CA', 'JP', 'AU']),
+        'usage_type': random.choice(['isp', 'hosting', 'business', 'mobile']),
+        'isp': random.choice(['Cloudflare', 'Amazon', 'Google', 'Microsoft', 'DigitalOcean']),
+        'categories': categories,
+        'last_reported': '2024-10-15T10:30:00Z' if total_reports > 0 else None,
+        'api_used': False
+    }
 
 def check_ip_reputation_abuseipdb(ip):
-    """Verificar reputación de IP usando AbuseIPDB API - reemplaza 74+ blacklists DNS"""
+    """Verificar reputación de IP usando AbuseIPDB API"""
     try:
-        # Si no hay API key configurada o es la de ejemplo, usar datos simulados
         if not ABUSEIPDB_API_KEY or ABUSEIPDB_API_KEY == 'YOUR_API_KEY_HERE':
-            # Generar datos simulados realistas para demostración
-            import random
-            import hashlib
-            
-            # Usar hash de IP para datos consistentes
-            ip_hash = int(hashlib.md5(ip.encode()).hexdigest()[:8], 16)
-            random.seed(ip_hash)
-            
-            # Simular diferentes tipos de IPs
-            abuse_confidence = random.choice([0, 0, 0, 0, 0, 5, 15, 25, 45, 75, 90])  # Mayoría limpias
-            total_reports = random.choice([0, 0, 0, 1, 3, 8, 25, 50, 150, 500]) if abuse_confidence > 0 else 0
-            is_whitelisted = abuse_confidence == 0 and random.random() < 0.1  # 10% whitelisted
-            
-            # Categorías simuladas basadas en confianza
-            categories = []
-            if abuse_confidence > 50:
-                categories = random.sample([4, 5, 15, 18, 20], k=random.randint(1, 3))
-            elif abuse_confidence > 25:
-                categories = random.sample([8, 9, 14, 22], k=random.randint(0, 2))
-            elif abuse_confidence > 0:
-                categories = random.sample([11, 13, 19], k=random.randint(0, 1))
-            
-            return {
-                'success': True,
-                'ip': ip,
-                'abuse_confidence': abuse_confidence,
-                'total_reports': total_reports,
-                'is_whitelisted': is_whitelisted,
-                'country_code': random.choice(['US', 'DE', 'FR', 'UK', 'CA', 'JP', 'AU']),
-                'usage_type': random.choice(['isp', 'hosting', 'business', 'mobile']),
-                'isp': random.choice(['Cloudflare', 'Amazon', 'Google', 'Microsoft', 'DigitalOcean']),
-                'categories': categories,
-                'last_reported': '2024-10-15T10:30:00Z' if total_reports > 0 else None,
-                'api_used': False  # Indicar que son datos simulados
-            }
+            return generate_simulated_reputation_data(ip)
         
-        # Consulta real a AbuseIPDB API (cuando tienes API key válida)
+        # Consulta real a AbuseIPDB API
         conn = http.client.HTTPSConnection("api.abuseipdb.com")
-        headers = {
-            'Key': ABUSEIPDB_API_KEY,
-            'Accept': 'application/json'
-        }
+        headers = {'Key': ABUSEIPDB_API_KEY, 'Accept': 'application/json'}
         
-        # Verificar IP (últimos 90 días, con información detallada)
         conn.request("GET", f"/api/v2/check?ipAddress={ip}&maxAgeInDays=90&verbose", headers=headers)
         response = conn.getresponse()
         data = response.read().decode()
         
-        if response.status == 200:
-            result = json.loads(data)
-            # Verificar que la respuesta tenga la estructura esperada
-            if 'data' in result:
-                api_data = result['data']
-                abuse_confidence = api_data.get('abuseConfidencePercentage', 0)
-                total_reports = api_data.get('totalReports', 0)
-                
-                return {
-                    'success': True,
-                    'ip': api_data.get('ipAddress', ip),
-                    'abuse_confidence': abuse_confidence,
-                    'total_reports': total_reports,
-                    'is_whitelisted': api_data.get('isWhitelisted', False),
-                    'country_code': api_data.get('countryCode', 'XX'),
-                    'usage_type': api_data.get('usageType', 'unknown'),
-                    'isp': api_data.get('isp', 'Unknown'),
-                    'categories': api_data.get('categories', []),
-                    'last_reported': api_data.get('lastReportedAt'),
-                    'api_used': True
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Respuesta API inválida',
-                    'message': 'La respuesta no contiene datos esperados'
-                }
-        else:
+        if response.status != 200:
             return {
                 'success': False,
                 'error': f'AbuseIPDB API error: {response.status}',
                 'message': data
             }
+        
+        result = json.loads(data)
+        if 'data' not in result:
+            return {
+                'success': False,
+                'error': 'Respuesta API inválida',
+                'message': 'La respuesta no contiene datos esperados'
+            }
+        
+        api_data = result['data']
+        return {
+            'success': True,
+            'ip': api_data.get('ipAddress', ip),
+            'abuse_confidence': api_data.get('abuseConfidencePercentage', 0),
+            'total_reports': api_data.get('totalReports', 0),
+            'is_whitelisted': api_data.get('isWhitelisted', False),
+            'country_code': api_data.get('countryCode', 'XX'),
+            'usage_type': api_data.get('usageType', 'unknown'),
+            'isp': api_data.get('isp', 'Unknown'),
+            'categories': api_data.get('categories', []),
+            'last_reported': api_data.get('lastReportedAt'),
+            'api_used': True
+        }
             
     except Exception as e:
         return {
@@ -252,147 +350,109 @@ def check_dns_blacklist(ip, blacklist_host):
         return False  # En caso de error, asumir no listada
 
 def check_multiple_blacklists(ip):
-    """Verificar IP contra múltiples blacklists DNS clave usando threading"""
-    # Blacklists DNS clave más importantes
-    blacklists = {
-        # Spamhaus (las más importantes)
-        'zen.spamhaus.org': 'Spamhaus ZEN',
-        'sbl.spamhaus.org': 'Spamhaus SBL',
-        'cbl.spamhaus.org': 'Spamhaus CBL', 
-        'css.spamhaus.org': 'Spamhaus CSS',
-        'pbl.spamhaus.org': 'Spamhaus PBL',
-
-        # SpamCop
-        'bl.spamcop.net': 'SpamCop',
-        
-        # SURBL/URIBL (URLs y dominios)
-        'multi.surbl.org': 'SURBL Multi',
-        'multi.uribl.com': 'URIBL Multi',
-        
-        # SORBS
-        'dnsbl.sorbs.net': 'SORBS DNSBL',
-        'spam.dnsbl.sorbs.net': 'SORBS Spam',
-        'http.dnsbl.sorbs.net': 'SORBS HTTP',
-        
-        # Barracuda
-        'b.barracudacentral.org': 'Barracuda',
-        
-        # CBL (Composite Blocking List)
-        'cbl.abuseat.org': 'CBL Abuseat',
-        
-        # PSBL
-        'psbl.surriel.com': 'PSBL',
-        
-        # Invaluement
-        'ips.backscatterer.org': 'Backscatterer',
-        
-        # Otras importantes
-        'dnsbl.njabl.org': 'NJABL',
-        'rbl.efnetrbl.org': 'EFNet RBL',
-        'blackholes.mail-abuse.org': 'Mail Abuse',
-        'relays.mail-abuse.org': 'Mail Abuse Relays',
-        'dynablock.njabl.org': 'NJABL Dynamic',
-        'no-more-funn.moensted.dk': 'No More Funn'
-    }
-    
+    """Verificar IP contra múltiples blacklists DNS usando threading"""
     results = {}
     
-    # Usar ThreadPoolExecutor para consultas paralelas (más rápido)
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_blacklist = {
             executor.submit(check_dns_blacklist, ip, host): (host, name) 
-            for host, name in blacklists.items()
+            for host, name in DNS_BLACKLISTS.items()
         }
         
         for future in future_to_blacklist:
             host, name = future_to_blacklist[future]
             try:
-                is_listed = future.result(timeout=3)  # 3 segundos timeout por consulta
-                results[host] = {
-                    'name': name,
-                    'listed': is_listed,
-                    'host': host
-                }
+                is_listed = future.result(timeout=3)
+                results[host] = {'name': name, 'listed': is_listed, 'host': host}
             except Exception as e:
-                # En caso de error, marcar como no disponible
-                results[host] = {
-                    'name': name,
-                    'listed': False,
-                    'host': host,
-                    'error': str(e)
-                }
+                results[host] = {'name': name, 'listed': False, 'host': host, 'error': str(e)}
     
     return results
 
 def get_abuse_categories_description(categories):
     """Convertir códigos de categorías de AbuseIPDB a descripciones legibles"""
-    category_map = {
-        3: "Fraud", 4: "DDoS Attack", 5: "FTP Brute-Force", 6: "Ping of Death",
-        7: "Phishing", 8: "Fraud VoIP", 9: "Open Proxy", 10: "Web Spam",
-        11: "Email Spam", 12: "Blog Spam", 13: "VPN IP", 14: "Port Scan",
-        15: "Hacking", 16: "SQL Injection", 17: "Spoofing", 18: "Brute-Force",
-        19: "Bad Web Bot", 20: "Exploited Host", 21: "Web App Attack",
-        22: "SSH", 23: "IoT Targeted"
-    }
-    return [category_map.get(cat, f"Category {cat}") for cat in categories]
+    return [ABUSE_CATEGORIES.get(cat, f"Category {cat}") for cat in categories]
 
 def calculate_trust_metrics(abuse_confidence, total_reports, is_whitelisted):
     """Calcular métricas de confianza basadas en datos de AbuseIPDB"""
     if is_whitelisted:
-        trust_score = 100
-        status = "Excelente"
-        level = "high"
-    elif abuse_confidence == 0 and total_reports == 0:
-        trust_score = 95
-        status = "Muy confiable"
-        level = "high"
-    elif abuse_confidence <= 10:
-        trust_score = max(80, 100 - abuse_confidence - (total_reports * 2))
-        status = "Confiable"
-        level = "medium"
-    elif abuse_confidence <= 25:
-        trust_score = max(60, 100 - abuse_confidence - (total_reports * 3))
-        status = "Moderadamente confiable"
-        level = "medium"
-    elif abuse_confidence <= 50:
-        trust_score = max(30, 100 - abuse_confidence - (total_reports * 4))
-        status = "Sospechosa"
-        level = "low"
-    else:
-        trust_score = max(0, 100 - abuse_confidence - (total_reports * 5))
-        status = "Peligrosa"
-        level = "low"
+        return 100, "Excelente", "high"
     
-    return int(trust_score), status, level
+    if abuse_confidence == 0 and total_reports == 0:
+        return 95, "Muy confiable", "high"
+    
+    trust_levels = [
+        (10, 2, 80, "Confiable", "medium"),
+        (25, 3, 60, "Moderadamente confiable", "medium"),
+        (50, 4, 30, "Sospechosa", "low"),
+        (float('inf'), 5, 0, "Peligrosa", "low")
+    ]
+    
+    for threshold, multiplier, min_score, status, level in trust_levels:
+        if abuse_confidence <= threshold:
+            trust_score = max(min_score, 100 - abuse_confidence - (total_reports * multiplier))
+            return int(trust_score), status, level
 
 def get_geolocation(ip):
+    """Obtener información de geolocalización de una IP"""
     try:
         conn = http.client.HTTPSConnection("ipwhois.app")
         conn.request("GET", f"/json/{ip}")
         response = conn.getresponse()
-        data = response.read().decode()
-        geo_info = json.loads(data)
+        geo_info = json.loads(response.read().decode())
 
-        if geo_info.get("success", False):
-            return {
-                'success': True,
-                'country': geo_info.get('country', 'N/A'),
-                'region': geo_info.get('region', 'N/A'),
-                'city': geo_info.get('city', 'N/A'),
-                'isp': geo_info.get('isp', 'N/A'),
-                'org': geo_info.get('org', 'N/A'),
-                'latitude': geo_info.get('latitude', 'N/A'),
-                'longitude': geo_info.get('longitude', 'N/A'),
-                'timezone': geo_info.get('timezone', 'N/A')
-            }
-        else:
+        if not geo_info.get("success", False):
             return {'success': False}
+        
+        return {
+            'success': True,
+            'country': geo_info.get('country', 'N/A'),
+            'region': geo_info.get('region', 'N/A'),
+            'city': geo_info.get('city', 'N/A'),
+            'isp': geo_info.get('isp', 'N/A'),
+            'org': geo_info.get('org', 'N/A'),
+            'latitude': geo_info.get('latitude', 'N/A'),
+            'longitude': geo_info.get('longitude', 'N/A'),
+            'timezone': geo_info.get('timezone', 'N/A')
+        }
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
+def calculate_simulated_categories(reputation):
+    """Calcular categorías simuladas basadas en datos de AbuseIPDB"""
+    abuse_conf = reputation['abuse_confidence']
+    categories = reputation['categories']
+    
+    def calc_listed(condition, high_div, low_div, max_val):
+        if condition:
+            return min(max_val, max(1, int(abuse_conf / high_div)))
+        elif abuse_conf > 25:
+            return min(max_val // 2, max(1, int(abuse_conf / low_div)))
+        return 0
+    
+    spam_listed = calc_listed(any(c in [10, 11, 12] for c in categories), 5, 15, 8)
+    security_listed = calc_listed(any(c in [15, 16, 20, 21, 7] for c in categories), 4, 10, 12)
+    proxy_listed = min(3, max(1, int(abuse_conf / 20))) if any(c in [9, 13] for c in categories) else 0
+    sorbs_listed = calc_listed(any(c in [4, 14, 18] for c in categories), 6, 12, 10)
+    
+    policy_listed = 0
+    usage_type = reputation['usage_type']
+    if usage_type == 'hosting' and abuse_conf > 10:
+        policy_listed = min(6, max(1, int(abuse_conf / 8)))
+    elif usage_type == 'isp' and abuse_conf > 30:
+        policy_listed = min(3, max(1, int(abuse_conf / 15)))
+    
+    return {
+        'Spam Blacklists': {'listed': spam_listed, 'total': 29, 'blacklists': []},
+        'Security/Malware Blacklists': {'listed': security_listed, 'total': 14, 'blacklists': []},
+        'Tor/Proxy Blacklists': {'listed': proxy_listed, 'total': 3, 'blacklists': []},
+        'SORBS Blacklists': {'listed': sorbs_listed, 'total': 14, 'blacklists': []},
+        'Policy/Bogon Blacklists': {'listed': policy_listed, 'total': 14, 'blacklists': []}
+    }
+
 def verify_ip(ip):
-    """Función principal de verificación - ahora usa AbuseIPDB en lugar de 74+ DNS blacklists"""
-    # Validar IP
+    """Función principal de verificación - usa AbuseIPDB y blacklists DNS"""
+    # Validar IP (ya validada en la ruta, esta es validación adicional)
     try:
         socket.inet_aton(ip)
     except socket.error:
@@ -435,93 +495,9 @@ def verify_ip(ip):
     execution_time = time.time() - start_time
     
     # Registrar consulta en base de datos
-    try:
-        log_entry = QueryLog(
-            ip_address=ip,
-            abuse_confidence=reputation['abuse_confidence'],
-            total_reports=reputation['total_reports'],
-            is_whitelisted=reputation['is_whitelisted'],
-            country_code=reputation.get('country_code'),
-            usage_type=reputation.get('usage_type'),
-            trust_score=trust_score,
-            execution_time=execution_time,
-            api_used=reputation.get('api_used', False)
-        )
-        db.session.add(log_entry)
-        db.session.commit()
-    except Exception as e:
-        print(f"Error registrando consulta: {e}")
-        db.session.rollback()
+    log_query_to_database(ip, reputation, trust_score, execution_time)
     
-    # Simular estructura de categorías para compatibilidad con frontend
-    # Mejorado para mostrar datos más realistas y variados
-    
-    # Calcular bloqueos basados en la confianza de AbuseIPDB
-    abuse_conf = reputation['abuse_confidence']
-    categories = reputation['categories']
-    
-    # Spam Blacklists - basado en reportes de spam
-    spam_listed = 0
-    if 10 in categories or 11 in categories or 12 in categories:  # Web/Email/Blog Spam
-        spam_listed = min(8, max(1, int(abuse_conf / 5)))
-    elif abuse_conf > 25:
-        spam_listed = min(3, max(1, int(abuse_conf / 15)))
-    
-    # Security/Malware Blacklists - basado en actividad maliciosa
-    security_listed = 0
-    if any(cat in [15, 16, 20, 21, 7] for cat in categories):  # Hacking, SQL Injection, Exploited Host, Web App Attack, Phishing
-        security_listed = min(12, max(2, int(abuse_conf / 4)))
-    elif abuse_conf > 40:
-        security_listed = min(6, max(1, int(abuse_conf / 10)))
-    
-    # Tor/Proxy Blacklists - basado en proxies y VPNs
-    proxy_listed = 0
-    if 9 in categories or 13 in categories:  # Open Proxy, VPN IP
-        proxy_listed = min(3, max(1, int(abuse_conf / 20)))
-    
-    # SORBS Blacklists - basado en actividad general sospechosa
-    sorbs_listed = 0
-    if 4 in categories or 14 in categories or 18 in categories:  # DDoS, Port Scan, Brute-Force
-        sorbs_listed = min(10, max(1, int(abuse_conf / 6)))
-    elif abuse_conf > 20:
-        sorbs_listed = min(4, max(1, int(abuse_conf / 12)))
-    
-    # Policy/Bogon Blacklists - basado en tipo de uso y políticas
-    policy_listed = 0
-    if reputation['usage_type'] == 'hosting' and abuse_conf > 10:
-        policy_listed = min(6, max(1, int(abuse_conf / 8)))
-    elif reputation['usage_type'] == 'isp' and abuse_conf > 30:
-        policy_listed = min(3, max(1, int(abuse_conf / 15)))
-    
-    simulated_categories = {
-        'Spam Blacklists': {
-            'listed': spam_listed,
-            'total': 29,
-            'blacklists': []
-        },
-        'Security/Malware Blacklists': {
-            'listed': security_listed,
-            'total': 14,
-            'blacklists': []
-        },
-        'Tor/Proxy Blacklists': {
-            'listed': proxy_listed,
-            'total': 3,
-            'blacklists': []
-        },
-        'SORBS Blacklists': {
-            'listed': sorbs_listed,
-            'total': 14,
-            'blacklists': []
-        },
-        'Policy/Bogon Blacklists': {
-            'listed': policy_listed,
-            'total': 14,
-            'blacklists': []
-        }
-    }
-    
-    # Calcular total de listas que reportan la IP
+    simulated_categories = calculate_simulated_categories(reputation)
     total_listed = sum(cat['listed'] for cat in simulated_categories.values())
     
     return {
@@ -557,6 +533,32 @@ def verify_ip(ip):
         }
     }
 
+def log_query_to_database(ip, reputation, trust_score, execution_time):
+    """Registrar consulta en la base de datos"""
+    try:
+        init_db()
+        log_entry = QueryLog(
+            ip_address=ip,
+            abuse_confidence=reputation['abuse_confidence'],
+            total_reports=reputation['total_reports'],
+            is_whitelisted=reputation['is_whitelisted'],
+            country_code=reputation.get('country_code'),
+            usage_type=reputation.get('usage_type'),
+            trust_score=trust_score,
+            execution_time=execution_time,
+            api_used=reputation.get('api_used', False)
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        print(f"✅ Consulta registrada: IP={ip}, Trust={trust_score}")
+    except Exception as e:
+        print(f"❌ Error registrando consulta: {e}")
+        db.session.rollback()
+
+# ============================================
+# RUTAS PÚBLICAS
+# ============================================
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -565,19 +567,14 @@ def index():
 def health_check():
     """Health check endpoint para diagnosticar el estado de la aplicación"""
     try:
-        # Inicializar admin si no existe
         init_admin_if_needed()
-        
-        # Verificar conexión a base de datos
-        user_count = User.query.count()
-        query_count = QueryLog.query.count()
-        
         return jsonify({
             'status': 'ok',
             'database': 'connected',
-            'users': user_count,
-            'queries': query_count,
-            'environment': os.getenv('VERCEL_ENV', 'local')
+            'users': User.query.count(),
+            'queries': QueryLog.query.count(),
+            'environment': os.getenv('VERCEL_ENV', 'local'),
+            'version': APP_VERSION
         }), 200
     except Exception as e:
         return jsonify({
@@ -589,11 +586,23 @@ def health_check():
 
 @app.route('/verify', methods=['POST'])
 def verify():
-    data = request.get_json()
-    ip = data.get('ip', '').strip()
+    # Aplicar rate limiting si está disponible
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("10 per minute")(lambda: None)()
     
-    if not ip:
+    data = request.get_json()
+    ip_input = data.get('ip', '').strip()
+    
+    if not ip_input:
         return jsonify({'error': 'Por favor ingresa una dirección IP'}), 400
+    
+    # Validación segura de IP
+    if SECURITY_ENABLED:
+        ip, error = validate_and_sanitize_ip(ip_input)
+        if error:
+            return jsonify({'error': error}), 400
+    else:
+        ip = ip_input
     
     result = verify_ip(ip)
     return jsonify(result)
@@ -604,30 +613,38 @@ def verify():
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
+    # Rate limiting para prevenir brute force
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("5 per minute")(lambda: None)()
+    
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
     
-    # Inicializar admin si no existe ninguno
     init_admin_if_needed()
     
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        # Buscar usuario en la base de datos
-        user = User.query.filter_by(username=username).first()
-        
-        if user and user.check_password(password):
-            # Actualizar último login
-            user.last_login = datetime.utcnow()
-            db.session.commit()
-            
-            login_user(user)
-            return redirect(url_for('admin_dashboard'))
-        else:
-            flash('Usuario o contraseña incorrectos', 'error')
+    if request.method != 'POST':
+        return render_template('admin_login.html')
     
-    return render_template('admin_login.html')
+    username = request.form.get('username')
+    password = request.form.get('password')
+    user = User.query.filter_by(username=username).first()
+    
+    if not user or not user.check_password(password):
+        if SECURITY_ENABLED:
+            time.sleep(1)  # Delay anti-brute-force
+        flash('Usuario o contraseña incorrectos', 'error')
+        return render_template('admin_login.html')
+    
+    # Regenerar sesión tras login exitoso
+    if SECURITY_ENABLED:
+        session.permanent = True
+        session.modified = True
+
+    
+    user.last_login = datetime.utcnow()
+    db.session.commit()
+    login_user(user, remember=False)
+    return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/logout')
 @login_required
@@ -635,67 +652,50 @@ def admin_logout():
     logout_user()
     return redirect(url_for('index'))
 
-@app.route('/admin/dashboard')
-@login_required
-def admin_dashboard():
-    # Estadísticas generales
-    total_queries = QueryLog.query.count()
-    today_queries = QueryLog.query.filter(
-        QueryLog.timestamp >= datetime.utcnow().date()
-    ).count()
-    
-    # Últimas 24 horas
-    last_24h = datetime.utcnow() - timedelta(hours=24)
-    queries_24h = QueryLog.query.filter(QueryLog.timestamp >= last_24h).count()
+def get_dashboard_stats():
+    """Obtener estadísticas para el dashboard de administrador"""
+    now = datetime.utcnow()
+    last_24h = now - timedelta(hours=24)
+    seven_days_ago = now - timedelta(days=7)
     
     # IPs más consultadas
-    from sqlalchemy import func
     top_ips = db.session.query(
         QueryLog.ip_address,
         func.count(QueryLog.ip_address).label('count')
     ).group_by(QueryLog.ip_address).order_by(func.count(QueryLog.ip_address).desc()).limit(10).all()
     
     # Consultas por día (últimos 7 días)
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
     daily_queries = db.session.query(
         func.date(QueryLog.timestamp).label('date'),
         func.count(QueryLog.id).label('count')
     ).filter(QueryLog.timestamp >= seven_days_ago).group_by(func.date(QueryLog.timestamp)).all()
     
-    # Estadísticas de confianza
-    avg_trust_score = db.session.query(func.avg(QueryLog.trust_score)).scalar() or 0
-    high_risk_count = QueryLog.query.filter(QueryLog.abuse_confidence > 50).count()
-    whitelisted_count = QueryLog.query.filter(QueryLog.is_whitelisted == True).count()
-    
     # Consultas por país
     country_stats = db.session.query(
         QueryLog.country_code,
         func.count(QueryLog.country_code).label('count')
-    ).filter(QueryLog.country_code.isnot(None)).group_by(QueryLog.country_code).order_by(func.count(QueryLog.country_code).desc()).limit(10).all()
+    ).filter(QueryLog.country_code.isnot(None)).group_by(
+        QueryLog.country_code
+    ).order_by(func.count(QueryLog.country_code).desc()).limit(10).all()
     
-    # API usage
-    api_queries = QueryLog.query.filter(QueryLog.api_used == True).count()
-    simulated_queries = QueryLog.query.filter(QueryLog.api_used == False).count()
-    
-    # Convertir Row objects a listas/tuplas para JSON serialization
-    top_ips_list = [(ip, count) for ip, count in top_ips]
-    daily_queries_list = [(str(date), count) for date, count in daily_queries]
-    country_stats_list = [(country, count) for country, count in country_stats]
-    
-    stats = {
-        'total_queries': total_queries,
-        'today_queries': today_queries,
-        'queries_24h': queries_24h,
-        'top_ips': top_ips_list,
-        'daily_queries': daily_queries_list,
-        'avg_trust_score': round(avg_trust_score, 2),
-        'high_risk_count': high_risk_count,
-        'whitelisted_count': whitelisted_count,
-        'country_stats': country_stats_list,
-        'api_queries': api_queries,
-        'simulated_queries': simulated_queries
+    return {
+        'total_queries': QueryLog.query.count(),
+        'today_queries': QueryLog.query.filter(QueryLog.timestamp >= now.date()).count(),
+        'queries_24h': QueryLog.query.filter(QueryLog.timestamp >= last_24h).count(),
+        'top_ips': [(ip, count) for ip, count in top_ips],
+        'daily_queries': [(str(date), count) for date, count in daily_queries],
+        'avg_trust_score': round(db.session.query(func.avg(QueryLog.trust_score)).scalar() or 0, 2),
+        'high_risk_count': QueryLog.query.filter(QueryLog.abuse_confidence > 50).count(),
+        'whitelisted_count': QueryLog.query.filter(QueryLog.is_whitelisted == True).count(),
+        'country_stats': [(country, count) for country, count in country_stats],
+        'api_queries': QueryLog.query.filter(QueryLog.api_used == True).count(),
+        'simulated_queries': QueryLog.query.filter(QueryLog.api_used == False).count()
     }
-    
+
+@app.route('/admin/dashboard')
+@login_required
+def admin_dashboard():
+    stats = get_dashboard_stats()
     return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
 
 # ============================================
@@ -706,25 +706,22 @@ def admin_dashboard():
 @require_api_key
 def api_status():
     """Endpoint para verificar el estado del servicio"""
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
+    
     try:
-        # Verificar conexión a base de datos
         db.session.execute('SELECT 1')
-        
-        # Obtener últimas estadísticas
         last_query = QueryLog.query.order_by(QueryLog.timestamp.desc()).first()
-        total_queries = QueryLog.query.count()
-        
-        # Calcular tiempo de respuesta promedio
-        avg_response_time = db.session.query(func.avg(QueryLog.execution_time)).scalar() or 0
         
         return jsonify({
             'status': 'online',
             'timestamp': datetime.utcnow().isoformat(),
             'database': 'connected',
-            'total_queries': total_queries,
+            'total_queries': QueryLog.query.count(),
             'last_query': last_query.timestamp.isoformat() if last_query else None,
-            'avg_response_time': round(avg_response_time, 3),
-            'version': '3.5'
+            'avg_response_time': round(db.session.query(func.avg(QueryLog.execution_time)).scalar() or 0, 3),
+            'version': APP_VERSION
         })
     except Exception as e:
         return jsonify({
@@ -737,15 +734,14 @@ def api_status():
 @require_api_key
 def api_stats():
     """Endpoint para obtener estadísticas detalladas"""
-    period = request.args.get('period', '7d')  # 24h, 7d, 30d
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
     
-    # Calcular período
-    if period == '24h':
-        since = datetime.utcnow() - timedelta(hours=24)
-    elif period == '30d':
-        since = datetime.utcnow() - timedelta(days=30)
-    else:  # 7d por defecto
-        since = datetime.utcnow() - timedelta(days=7)
+    period = request.args.get('period', '7d')
+    
+    period_map = {'24h': timedelta(hours=24), '30d': timedelta(days=30), '7d': timedelta(days=7)}
+    since = datetime.utcnow() - period_map.get(period, timedelta(days=7))
     
     # Consultas en el período
     queries = QueryLog.query.filter(QueryLog.timestamp >= since).all()
@@ -797,6 +793,10 @@ def api_stats():
 @require_api_key
 def api_recent():
     """Endpoint para obtener consultas recientes"""
+    # Rate limiting
+    if SECURITY_ENABLED and limiter:
+        limiter.limit("30 per minute")(lambda: None)()
+    
     limit = int(request.args.get('limit', 50))
     
     queries = QueryLog.query.order_by(QueryLog.timestamp.desc()).limit(limit).all()
@@ -814,4 +814,7 @@ def api_recent():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # Verificar modo debug
+    debug_mode = os.getenv('FLASK_ENV') != 'production'
+    
+    app.run(debug=debug_mode, port=5000, host='127.0.0.1' if debug_mode else '0.0.0.0')

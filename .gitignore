@@ -14,6 +14,20 @@ __pycache__/
 *.tmp
 *.log
 
-#Archivos backup
+# Base de datos local SQLite
+instance/
+*.db
+
+# Scripts auxiliares y testing
+test_*.py
+fix_*.py
+migrate_*.py
+sync_*.py
+generate_*.py
+init_*.py
+start.sh
+
+# Archivos backup
 script_backup.js
 verificar_ip.py
+*_backup.*
