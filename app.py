@@ -37,13 +37,11 @@ try:
         sanitize_log_input
     )
     SECURITY_ENABLED = True
-    logger = setup_secure_logging()
 except ImportError:
     SECURITY_ENABLED = False
     import logging
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    logger.warning("⚠️ security_fixes.py no encontrado - ejecutando sin protecciones adicionales")
+
 
 # Constantes de configuración
 APP_VERSION = '3.5'
@@ -124,7 +122,7 @@ if not SECRET_KEY:
     else:
         # Solo en desarrollo: usar clave por defecto con advertencia
         SECRET_KEY = 'dev-secret-key-change-in-production'
-        logger.warning("⚠️ Usando SECRET_KEY de desarrollo - NO USAR EN PRODUCCIÓN")
+
 
 app.config['SECRET_KEY'] = SECRET_KEY
 
@@ -132,10 +130,10 @@ app.config['SECRET_KEY'] = SECRET_KEY
 if SECURITY_ENABLED:
     csrf, limiter = configure_security(app)
     setup_error_handlers(app)
-    logger.info(f"✅ VerIP v{APP_VERSION} - Configuración de seguridad activada")
+
 else:
     csrf, limiter = None, None
-    logger.warning("⚠️ Ejecutando sin protecciones de seguridad adicionales")
+
 
 # Inicializar extensiones de base de datos
 db = SQLAlchemy(app)
@@ -458,7 +456,6 @@ def verify_ip(ip):
     try:
         socket.inet_aton(ip)
     except socket.error:
-        logger.warning(f"IP inválida después de validación previa: {sanitize_log_input(ip) if SECURITY_ENABLED else ip[:50]}")
         return {'error': f"'{ip}' no es una dirección IP válida."}
 
     start_time = time.time()
@@ -603,7 +600,6 @@ def verify():
     if SECURITY_ENABLED:
         ip, error = validate_and_sanitize_ip(ip_input)
         if error:
-            logger.warning(f"Intento de IP inválida: {sanitize_log_input(ip_input[:50])} desde {request.remote_addr}")
             return jsonify({'error': error}), 400
     else:
         ip = ip_input
@@ -635,7 +631,6 @@ def admin_login():
     
     if not user or not user.check_password(password):
         if SECURITY_ENABLED:
-            logger.warning(f"Intento de login fallido para '{sanitize_log_input(username)}' desde {request.remote_addr}")
             time.sleep(1)  # Delay anti-brute-force
         flash('Usuario o contraseña incorrectos', 'error')
         return render_template('admin_login.html')
@@ -644,7 +639,7 @@ def admin_login():
     if SECURITY_ENABLED:
         session.permanent = True
         session.modified = True
-        logger.info(f"Login exitoso: {sanitize_log_input(username)} desde {request.remote_addr}")
+
     
     user.last_login = datetime.utcnow()
     db.session.commit()
@@ -821,15 +816,5 @@ def api_recent():
 if __name__ == '__main__':
     # Verificar modo debug
     debug_mode = os.getenv('FLASK_ENV') != 'production'
-    
-    if debug_mode:
-        logger.info("🔧 Modo desarrollo - Debug activado")
-    else:
-        logger.info("🚀 Modo producción")
-    
-    if SECURITY_ENABLED:
-        logger.info("✅ Protecciones de seguridad activas")
-    else:
-        logger.warning("⚠️ Ejecutando sin protecciones de seguridad adicionales")
     
     app.run(debug=debug_mode, port=5000, host='127.0.0.1' if debug_mode else '0.0.0.0')

@@ -265,105 +265,10 @@ def require_api_key_secure(f):
         if not hmac.compare_digest(api_key, expected_key):
             # Delay para prevenir brute force
             time.sleep(1)
-            logger.warning(f"API key inválida desde {request.remote_addr}")
             return jsonify({'error': 'API key inválida'}), 401
         
         return f(*args, **kwargs)
     return decorated_function
-
-# ============================================
-# 4. LOGGING SEGURO
-# ============================================
-
-"""def setup_secure_logging():
-    ""
-    Configurar logging seguro con rotación de archivos.
-    
-    Usage:
-        logger = setup_secure_logging()
-        logger.info("Mensaje seguro")
-    ""
-    from logging.handlers import RotatingFileHandler
-    
-    # Configurar logger
-    logger = logging.getLogger('verip')
-    logger.setLevel(logging.INFO)
-    
-    # Detectar si estamos en Vercel (sistema de archivos de solo lectura)
-    is_vercel = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
-    
-    # Solo configurar archivo de log si NO estamos en Vercel
-    if not is_vercel:
-        # Crear directorio de logs si no existe
-        log_dir = "/tmp/logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, mode=0o750)
-        
-        # Handler para archivo con rotación
-        file_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'app.log'),
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=10
-        )
-        
-        # Formato para archivo
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    
-    # Handler para consola (siempre activo)
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(
-        '%(levelname)s: %(message)s'
-    ))
-    logger.addHandler(console_handler)
-    
-    return logger
-
-# Crear logger global
-logger = setup_secure_logging()"""
-
-
-def setup_secure_logging():
-    """
-    Configurar logging seguro con rotación de archivos.
-    """
-    from logging.handlers import RotatingFileHandler
-    import logging, os
-
-    logger = logging.getLogger('verip')
-    logger.setLevel(logging.INFO)
-
-    is_vercel = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
-
-    # Definir directorio según entorno
-    log_dir = "/tmp/logs" if is_vercel else "logs"
-    os.makedirs(log_dir, mode=0o750, exist_ok=True)
-
-    # Handler para archivo con rotación
-    file_handler = RotatingFileHandler(
-        os.path.join(log_dir, 'app.log'),
-        maxBytes=10*1024*1024,
-        backupCount=10
-    )
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    # Handler para consola
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-    logger.addHandler(console_handler)
-
-    return logger
-
-logger = setup_secure_logging()
 
 
 # ============================================
@@ -381,7 +286,6 @@ def setup_error_handlers(app):
     
     @app.errorhandler(400)
     def bad_request(e):
-        logger.warning(f"Bad request: {sanitize_log_input(str(e))}")
         return jsonify({'error': 'Solicitud inválida'}), 400
     
     @app.errorhandler(401)
@@ -398,7 +302,6 @@ def setup_error_handlers(app):
     
     @app.errorhandler(429)
     def ratelimit_handler(e):
-        logger.warning(f"Rate limit exceeded from {request.remote_addr}")
         return jsonify({
             'error': 'Demasiadas solicitudes',
             'message': 'Por favor, espera antes de intentar nuevamente'
@@ -406,7 +309,6 @@ def setup_error_handlers(app):
     
     @app.errorhandler(500)
     def internal_error(e):
-        logger.exception("Internal server error")
         if DEBUG_MODE:
             return jsonify({
                 'error': 'Error interno del servidor',
@@ -417,7 +319,6 @@ def setup_error_handlers(app):
     
     @app.errorhandler(Exception)
     def handle_exception(e):
-        logger.exception(f"Unhandled exception: {type(e).__name__}")
         if DEBUG_MODE:
             return jsonify({
                 'error': str(e),
@@ -444,7 +345,6 @@ def validate_json_request():
             if not isinstance(data, dict):
                 return jsonify({'error': 'JSON debe ser un objeto'}), 400
         except Exception as e:
-            logger.warning(f"Invalid JSON: {sanitize_log_input(str(e))}")
             return jsonify({'error': 'JSON inválido'}), 400
     return None
 
@@ -487,7 +387,6 @@ def check_dns_blacklist_secure(ip, blacklist_host, allowed_hosts):
     """
     # Validar que blacklist_host está en whitelist
     if blacklist_host not in allowed_hosts:
-        logger.error(f"Blacklist host no autorizado: {blacklist_host}")
         raise ValueError("Blacklist host no autorizado")
     
     # Validar IP
@@ -522,7 +421,6 @@ def check_dns_blacklist_secure(ip, blacklist_host, allowed_hosts):
     except socket.gaierror:
         return False
     except Exception as e:
-        logger.warning(f"DNS blacklist check error: {sanitize_log_input(str(e))}")
         return False
 
 # ============================================
@@ -567,7 +465,6 @@ from security_fixes import (
 )
 
 # Configurar logging
-logger = setup_secure_logging()
 
 # Crear app
 app = Flask(__name__)
@@ -596,7 +493,6 @@ def verify():
     # Validar IP
     ip, error = validate_and_sanitize_ip(ip_input)
     if error:
-        logger.warning(f"Invalid IP attempt: {sanitize_log_input(ip_input)}")
         return jsonify({'error': error}), 400
     
     # Procesar IP validada
@@ -646,14 +542,6 @@ def run_security_checks():
     if os.getenv('FLASK_ENV') == 'production' and not os.getenv('FORCE_HTTPS'):
         issues.append("⚠️  HTTPS no forzado en producción")
     
-    if issues:
-        logger.warning("=" * 60)
-        logger.warning("PROBLEMAS DE SEGURIDAD DETECTADOS:")
-        for issue in issues:
-            logger.warning(f"  {issue}")
-        logger.warning("=" * 60)
-    else:
-        logger.info("✅ Verificaciones de seguridad básicas: OK")
     
     return len(issues) == 0
 
