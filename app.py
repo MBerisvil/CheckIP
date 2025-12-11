@@ -48,7 +48,7 @@ DEFAULT_ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
 DEFAULT_ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
 API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
-DATABASE_URL = os.getenv('DATABASE_URL')
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
 
 # Constantes de categorías de AbuseIPDB
 ABUSE_CATEGORIES = {
