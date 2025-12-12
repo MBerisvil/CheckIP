@@ -32,7 +32,6 @@ try:
         setup_secure_logging,
         validate_and_sanitize_ip,
         require_api_key_secure,
-        create_csrf_endpoint,
         validate_json_request,
         sanitize_log_input
     )
@@ -232,9 +231,6 @@ if SECURITY_ENABLED:
     @app.before_request
     def check_json():
         return validate_json_request()
-    
-    # Crear endpoint CSRF
-    create_csrf_endpoint(app)
 
 # Decorador para API key (mantener compatibilidad)
 def require_api_key(f):
@@ -691,12 +687,25 @@ def get_dashboard_stats():
         'api_queries': QueryLog.query.filter(QueryLog.api_used == True).count(),
         'simulated_queries': QueryLog.query.filter(QueryLog.api_used == False).count()
     }
-
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
     stats = get_dashboard_stats()
-    return render_template('admin_dashboard.html', stats=stats, api_key=API_MONITOR_KEY)
+    show_api_key = request.args.get('show_api_key') == 'true'
+    api_key_to_show = None
+    
+    if show_api_key:
+        # Verificar que la contraseña del admin es correcta
+        admin_password = request.args.get('admin_password')
+        if admin_password and current_user.check_password(admin_password):
+            api_key_to_show = API_MONITOR_KEY
+        else:
+            flash('Contraseña incorrecta para mostrar API Key', 'error')
+    
+    return render_template('admin_dashboard.html', 
+                         stats=stats, 
+                         api_key=api_key_to_show,
+                         show_api_key=show_api_key)
 
 # ============================================
 # API DE MONITOREO

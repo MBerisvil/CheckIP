@@ -107,6 +107,12 @@ def configure_security(app):
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
         return response
     
+    # Crear endpoint CSRF
+    @app.route('/csrf-token', methods=['GET'])
+    def get_csrf_token():
+        token = generate_csrf()
+        return jsonify({'csrf_token': token})
+    
     return csrf, limiter
 
 # ============================================
