@@ -51,16 +51,16 @@ ABUSEIPDB_API_KEY = os.getenv('ABUSEIPDB_API_KEY', 'YOUR_API_KEY_HERE')
 API_MONITOR_KEY = os.getenv('API_MONITOR_KEY', 'monitor-api-key-change-in-production')
 
 # Configuración de base de datos
-# En producción (Vercel): usa PostgreSQL de Neon desde DATABASE_URL
+# En producción (Vercel): usa PostgreSQL de Neon desde DATABASE_URL o DATABASE_URL_PROD
 # En desarrollo: usa SQLite local o PostgreSQL si DATABASE_URL está definida
 if IS_PRODUCTION:
-    # En Vercel, DATABASE_URL debe estar configurada con PostgreSQL de Neon
-    DATABASE_URL = os.getenv('DATABASE_URL')
+    # En Vercel, intenta DATABASE_URL primero, luego DATABASE_URL_PROD
+    DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_URL_PROD')
     if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL no configurada en producción. Configure la variable de entorno en Vercel.")
+        raise RuntimeError("DATABASE_URL o DATABASE_URL_PROD no configurada en producción. Configure la variable de entorno en Vercel.")
 else:
     # En desarrollo local: SQLite por defecto o PostgreSQL si se especifica
-    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///verip_stats.db')
+    DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('DATABASE_URL_DEV') or 'sqlite:///verip_stats.db'
 
 # Constantes de categorías de AbuseIPDB
 ABUSE_CATEGORIES = {
